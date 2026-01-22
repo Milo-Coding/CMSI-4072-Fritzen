@@ -199,3 +199,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Todo tracker files
+todo.md
