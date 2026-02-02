@@ -1,8 +1,9 @@
+import HomePage from "./components/HomePage";
+
 function App() {
   return (
     <div className="app">
-      <h1>Multiplayer Poker</h1>
-      <p>Coming soon...</p>
+      <HomePage />
     </div>
   );
 }
