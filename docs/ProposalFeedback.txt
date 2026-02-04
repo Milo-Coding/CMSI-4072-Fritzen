@@ -6,11 +6,11 @@ Project: Poker Face 2
 Proposal Document [2 points]:
    Verbal Description:
       You state that this project is a continuation of your previous Poker
-      Face project, extending it with:
-         More advanced AI behavior
-         Multiple deep-learning and reinforcement-learning training
-            approaches
-         Transition from two-player to six-player Texas Hold’em
+         Face project, extending it with:
+            More advanced AI behavior
+            Multiple deep-learning and reinforcement-learning training
+               approaches
+            Transition from two-player to six-player Texas Hold’em
       You identify concrete goals and have appropriate technical detail
       To be fully complete, add:
          A target user group
@@ -32,10 +32,21 @@ Proposal Presentation [Slides and video] [3 points]:
       all the cards and views of tables with players.  You have a good mix
       of text and bullets so that your audience can focus on what you say.
 
-   Video:
 
 
 Summary:
 --------
 
 Nice job overall!  Keep up the good work.  Will update after video is posted.
+
+
+VIDEO EVALUATION
+================
+Your presentation is very good, has all the required elements and I like the
+graphics very much.  The focus of the project and its use of A.I. is a good
+idea, as is building off last semester's success.  For next time, see if you
+can put a little more energy into your voice, but it's nice that you are
+speaking from your head knowledge of the project and not just reading from a
+script.
+
+Full marks for this.  Five out of Five on this deliverable.
