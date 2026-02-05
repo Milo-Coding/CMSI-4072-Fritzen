@@ -119,10 +119,10 @@ class DQNAgent(BaseAgent):
         input_size: int = 13,
         hidden_size: int = 128,
         batch_size: int = 32,
-        gamma: float = 0.99,
+        gamma: float = 0.9,
         epsilon: float = 1.0,
         epsilon_min: float = 0.01,
-        epsilon_decay: float = 0.995,
+        epsilon_decay: float = 0.9999,
         **kwargs
     ):
         """
@@ -223,8 +223,6 @@ class DQNAgent(BaseAgent):
     def _decide_randomly(self, game_state: Dict[str, Any]) -> Union[str, Tuple[str, int]]:
         """
         Make a random valid decision.
-        
-        ORIGINAL: Agent.decide_action_randomly() from old code/agent.py
         """
         available = game_state.get("available_actions", ["fold"])
         action = random.choice(available)
@@ -240,9 +238,12 @@ class DQNAgent(BaseAgent):
             return ("bet", bet_amount)
         elif action == "raise":
             current_bet = game_state.get("current_table_bet", 0)
-            call_amount = game_state.get("call_amount", 0)
-            min_raise = current_bet + call_amount
-            raise_amount = min(self.chips + self.current_bet_in_round, min_raise)
+            # Minimum raise is current bet plus a small increment (use big blind as increment, default 20)
+            min_raise = current_bet + 20
+            # Max we can raise to is our total chips plus what we've already bet this round
+            max_raise = self.chips + self.current_bet_in_round
+            # Ensure raise is at least min_raise, but not more than max_raise
+            raise_amount = max(min_raise, min(max_raise, min_raise + random.randint(0, 40)))
             return ("raise", raise_amount)
         elif action == "allin":
             return ("raise", self.chips + self.current_bet_in_round)
@@ -279,8 +280,12 @@ class DQNAgent(BaseAgent):
         
         if intended_action in available:
             if intended_action == "raise":
-                min_raise = current_bet + call_amount
-                raise_amount = min(self.chips + self.current_bet_in_round, max(min_raise, min_raise * 2))
+                # Minimum raise is current bet plus a small increment (use big blind as increment, default 20)
+                min_raise = current_bet + 20
+                # Max we can raise to is our total chips plus what we've already bet this round
+                max_raise = self.chips + self.current_bet_in_round
+                # Try to raise to 2x the current bet, but ensure it's at least min_raise and at most max_raise
+                raise_amount = max(min_raise, min(max_raise, current_bet * 2))
                 return ("raise", raise_amount)
             elif intended_action == "bet":
                 bet_amount = min(self.chips, max(20, call_amount))
