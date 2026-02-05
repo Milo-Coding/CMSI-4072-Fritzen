@@ -137,7 +137,8 @@ class Game:
         })
         
         # Pre-flop betting
-        self._betting_round("Pre-Flop")
+        if self._can_continue_betting():
+            self._betting_round("Pre-Flop")
         if self._hand_over():
             return self._award_pot_if_single()
 
@@ -150,7 +151,8 @@ class Game:
             "count": 3
         })
         
-        self._betting_round("Flop")
+        if self._can_continue_betting():
+            self._betting_round("Flop")
         if self._hand_over():
             return self._award_pot_if_single()
 
@@ -163,7 +165,8 @@ class Game:
             "count": 1
         })
         
-        self._betting_round("Turn")
+        if self._can_continue_betting():
+            self._betting_round("Turn")
         if self._hand_over():
             return self._award_pot_if_single()
 
@@ -176,7 +179,8 @@ class Game:
             "count": 1
         })
         
-        self._betting_round("River")
+        if self._can_continue_betting():
+            self._betting_round("River")
 
         # Showdown
         self.current_phase = GamePhase.SHOWDOWN
@@ -335,23 +339,28 @@ class Game:
             player = self.players[action_index]
             
             # Check if betting round is complete
-            # Round ends when action returns to the last aggressor AND all bets are matched
+            # Round ends when action returns to the last aggressor (unless BB gets option)
             if last_aggressor_index is not None and action_index == last_aggressor_index:
-                # Special case: Pre-flop BB option when no one raised
-                if state_name == "Pre-Flop" and self.current_table_bet == self.big_blind and not bb_had_option:
-                    if action_index == bb_index:
-                        bb_had_option = True
-                        # BB gets to act (check or raise)
-                    else:
-                        # Someone else is the aggressor at BB level, round complete
-                        break
+                # Special case: Pre-flop BB gets option when everyone just called to BB
+                # Only give BB option if:
+                # 1. It's pre-flop
+                # 2. Current bet is still just the big blind (no raises)
+                # 3. BB hasn't had their option yet
+                # 4. We're at the BB position
+                if (state_name == "Pre-Flop" and 
+                    self.current_table_bet == self.big_blind and 
+                    not bb_had_option and 
+                    action_index == bb_index):
+                    # BB gets their option to raise or check
+                    bb_had_option = True
+                    # Let BB act below
                 else:
-                    # Normal case: action returned to aggressor, round complete
+                    # Action returned to aggressor - round complete
                     break
             
             # Also check if everyone has matched the bet and acted
-            # (handles case where there's no aggressor post-flop)
-            if last_aggressor_index is None and player.has_acted_this_round:
+            # (handles case where there's no aggressor yet, like start of post-flop)
+            if last_aggressor_index is None:
                 all_matched = all(
                     p.current_bet_in_round == self.current_table_bet or not p.is_playing_round
                     for p in self.players
@@ -374,8 +383,15 @@ class Game:
                 last_aggressor_index = action_index
                 # Reset has_acted for players who now need to respond to the raise
                 for p in self.players:
-                    if p != player and p.is_playing_round and p.current_bet_in_round < self.current_table_bet:
+                    if p != player and p.is_playing_round:
                         p.has_acted_this_round = False
+            
+            # If BB just exercised their option with a check, end the round
+            if (state_name == "Pre-Flop" and 
+                bb_had_option and 
+                action_index == bb_index and 
+                decision == "check"):
+                break
 
             action_index = (action_index + 1) % len(self.players)
         
@@ -636,6 +652,12 @@ class Game:
         """Check if hand is over (only one player remains)."""
         active = [p for p in self.players if p.is_playing_round]
         return len(active) <= 1
+    
+    def _can_continue_betting(self) -> bool:
+        """Check if betting can continue (at least 2 players can act)."""
+        # Players who can act have chips and are still in the round
+        can_act = [p for p in self.players if p.is_playing_round and p.chips > 0]
+        return len(can_act) >= 2
 
     def is_still_playable(self) -> bool:
         """Returns true if at least 2 players have chips."""
