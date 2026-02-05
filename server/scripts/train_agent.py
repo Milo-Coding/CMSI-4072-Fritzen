@@ -10,6 +10,7 @@ Usage:
     python -m scripts.train_agent --opponent random --save-path ./models/my_agent.pth
     python -m scripts.train_agent --load-path ./models/existing.pth --games 500
     python -m scripts.train_agent --players 6 --opponent dqn-train --games 10000
+    python -m scripts.train_agent --opponent dqn --opponent-model ./models/train_vs_random.pth --save-path ./models/train_vs_dqn_r10000.pth --games 1000 -p 6
 """
 
 import argparse
@@ -25,14 +26,28 @@ from app.engine import Game, Player
 from app.engine.agents import AgentRegistry, DQNAgent
 
 
-def create_opponent(opponent_type: str, chips: int, player_id: str) -> Player:
+def create_opponent(opponent_type: str, chips: int, player_id: str, opponent_model_path: str = None) -> Player:
     """Create an opponent player/agent."""
     if opponent_type == "random":
         return AgentRegistry.create("random", name="RandomBot", chips=chips, player_id=player_id)
     elif opponent_type == "dqn":
-        return AgentRegistry.create("dqn", name="DQN_Opponent", chips=chips, player_id=player_id, is_training=False)
+        return AgentRegistry.create(
+            "dqn", 
+            name="DQN_Opponent", 
+            chips=chips, 
+            player_id=player_id, 
+            is_training=False,
+            model_load_path=opponent_model_path
+        )
     elif opponent_type == "dqn-train":
-        return AgentRegistry.create("dqn", name="DQN_Opponent", chips=chips, player_id=player_id, is_training=True)
+        return AgentRegistry.create(
+            "dqn", 
+            name="DQN_Opponent", 
+            chips=chips, 
+            player_id=player_id, 
+            is_training=True,
+            model_load_path=opponent_model_path
+        )
     else:
         # Default to random
         return AgentRegistry.create("random", name="RandomBot", chips=chips, player_id=player_id)
@@ -56,6 +71,7 @@ def train(
     num_players: int = 2,
     model_load_path: str = None,
     model_save_path: str = "./models/trained_agent.pth",
+    opponent_model_path: str = None,
     save_every: int = 100,
     verbose: bool = True
 ):
@@ -69,8 +85,9 @@ def train(
         small_blind: Small blind amount
         opponent_type: Type of opponent (random, dqn, dqn-train)
         num_players: Total number of players (2-6), includes the trainee
-        model_load_path: Path to load existing model
+        model_load_path: Path to load existing model for trainee
         model_save_path: Path to save trained model
+        opponent_model_path: Path to load existing model for DQN opponents
         save_every: Save model every N games
         verbose: Print progress updates
     """
@@ -95,7 +112,7 @@ def train(
     # Create opponents (num_players - 1 opponents)
     opponents = []
     for i in range(num_players - 1):
-        opponent = create_opponent(opponent_type, initial_chips, f"opponent_{i+1}")
+        opponent = create_opponent(opponent_type, initial_chips, f"opponent_{i+1}", opponent_model_path)
         opponent.name = f"{opponent.name}_{i+1}"
         opponents.append(opponent)
     
@@ -121,7 +138,9 @@ def train(
         print(f"Opponent type: {opponent_type}")
         print(f"Save path: {model_save_path}")
         if model_load_path:
-            print(f"Loaded from: {model_load_path}")
+            print(f"Trainee loaded from: {model_load_path}")
+        if opponent_model_path and opponent_type in ["dqn", "dqn-train"]:
+            print(f"Opponent loaded from: {opponent_model_path}")
         print("=" * 60)
         print()
     
@@ -285,9 +304,16 @@ def main():
     )
     
     parser.add_argument(
+        "--opponent-model",
+        type=str,
+        default=None,
+        help="Path to load model for DQN opponents (only used with -o dqn or -o dqn-train)"
+    )
+    
+    parser.add_argument(
         "--save-every",
         type=int,
-        default=100,
+        default=500,
         help="Save model every N games"
     )
     
@@ -308,6 +334,7 @@ def main():
         num_players=args.players,
         model_load_path=args.load_path,
         model_save_path=args.save_path,
+        opponent_model_path=args.opponent_model,
         save_every=args.save_every,
         verbose=not args.quiet
     )
