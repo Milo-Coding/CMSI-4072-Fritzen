@@ -1,8 +1,6 @@
 """
 DQN Agent Module - Deep Q-Network Reinforcement Learning Agent
 
-MIGRATED FROM: old code/agent.py
-
 This agent uses a neural network trained with Q-learning to make decisions.
 Supports both training mode (with exploration) and inference mode.
 
@@ -39,8 +37,6 @@ except ImportError:
 class PokerNet(nn.Module if HAS_TORCH else object):
     """
     Neural network for Q-value estimation.
-    
-    ORIGINAL: PokerNet from old code/agent.py
     
     Architecture:
     - Input: Feature vector from game state
@@ -80,8 +76,6 @@ class DQNAgent(BaseAgent):
     """
     Deep Q-Network agent for poker.
     
-    MIGRATED FROM: old code/agent.py (Agent class)
-    
     Uses a neural network to estimate action values (Q-values) and
     selects actions using epsilon-greedy policy during training.
     
@@ -103,8 +97,10 @@ class DQNAgent(BaseAgent):
     DEFAULT_FEATURES = [
         "pot_size_ratio", "call_amount_ratio", "table_bet_ratio",
         "relative_position", "betting_freedom", "can_raise",
-        "stage", "num_opponents", "pair_in_hand", "high_card",
-        "suited", "connected", "hand_strength"
+        "stage", "num_active_opponents", "pair_in_hand", "high_card",
+        "suited", "connected", "hand_strength", "pot_odds",
+        "stack_to_pot_ratio", "relative_stack_size", "num_community_cards",
+        "position_is_late", "position_is_early"
     ]
     
     def __init__(
@@ -116,7 +112,7 @@ class DQNAgent(BaseAgent):
         is_training: bool = False,
         model_load_path: Optional[str] = None,
         model_save_path: Optional[str] = None,
-        input_size: int = 13,
+        input_size: int = 19,
         hidden_size: int = 128,
         batch_size: int = 32,
         gamma: float = 0.9,
@@ -193,8 +189,6 @@ class DQNAgent(BaseAgent):
         """
         Decide action using epsilon-greedy policy.
         
-        ORIGINAL: Agent.decide_action() from old code/agent.py
-        
         Args:
             game_state: Current game state
             
@@ -260,8 +254,6 @@ class DQNAgent(BaseAgent):
     def _map_action_index(self, action_idx: int, game_state: Dict[str, Any]) -> Union[str, Tuple[str, int]]:
         """
         Map network output to game action.
-        
-        ORIGINAL: Agent._map_action_index_to_action() from old code/agent.py
         """
         available = game_state.get("available_actions", [])
         current_bet = game_state.get("current_table_bet", 0)
@@ -319,50 +311,89 @@ class DQNAgent(BaseAgent):
     def featurize_game_state(self, game_state: Dict[str, Any]) -> Dict[str, float]:
         """
         Convert game state to feature vector.
-        
-        ORIGINAL: Agent.featurize_game_state() from old code/agent.py
-        Extended with additional features.
+        Enhanced for multiplayer with better position, pot odds, and stack features.
         """
         features = {}
         
-        # Get base features
-        opponents_chips = game_state.get("opponents_chips", [self.chips])
-        total_chips = sum(opponents_chips) + self.chips
+        # Get base game state info
         pot = game_state.get("pot", 0)
         call_amount = game_state.get("call_amount", 0)
         current_bet = game_state.get("current_table_bet", 0)
         
-        # Basic ratios
+        # Get player info - players is a list of player dicts
+        players = game_state.get("players", [])
+        num_total_players = len(players) if players else 2
+        agent_idx = game_state.get("agent_index", 0)
+        dealer_idx = game_state.get("dealer_index", 0)
+        
+        # Count active opponents (still playing this round)
+        active_opponents = [p for p in players if p.get("is_playing_round", False) 
+                           and players.index(p) != agent_idx]
+        num_active_opponents = len(active_opponents)
+        
+        # Calculate total chips in play (active players only)
+        opponents_chips = [p.get("chips", 0) for p in active_opponents]
+        total_chips = sum(opponents_chips) + self.chips
+        avg_opponent_chips = sum(opponents_chips) / len(opponents_chips) if opponents_chips else self.chips
+        
+        # === Basic Ratio Features ===
         features["pot_size_ratio"] = pot / total_chips if total_chips > 0 else 0.0
         features["call_amount_ratio"] = call_amount / self.chips if self.chips > 0 else 1.0
         features["table_bet_ratio"] = current_bet / self.chips if self.chips > 0 else 1.0
         
-        # Position features
-        players = game_state.get("players", [])
-        num_players = len(players) if players else 2
-        agent_idx = game_state.get("agent_index", 0)
-        dealer_idx = game_state.get("dealer_index", 0)
+        # === Position Features ===
+        # Relative position (0.0 = dealer, higher = later position)
+        features["relative_position"] = ((agent_idx - dealer_idx) % num_total_players) / max(num_total_players, 1)
         
-        features["relative_position"] = ((agent_idx - dealer_idx) % num_players) / num_players
+        # Position categories (early/late)
+        position_index = (agent_idx - dealer_idx) % num_total_players
+        # Last 1/3 of positions are "late", first 1/3 are "early"
+        features["position_is_late"] = 1.0 if position_index > (num_total_players * 2 / 3) else 0.0
+        features["position_is_early"] = 1.0 if position_index < (num_total_players / 3) else 0.0
         
-        # Action availability
+        # === Action Availability Features ===
         available = game_state.get("available_actions", [])
-        features["betting_freedom"] = len(available) / 4.0
-        features["can_raise"] = 1.0 if "raise" in available else 0.0
+        features["betting_freedom"] = len(available) / 5.0  # fold, check, call, bet, raise
+        features["can_raise"] = 1.0 if "raise" in available or "bet" in available else 0.0
         
-        # Game stage
+        # === Game Stage ===
         stage_values = {"Pre-Flop": 0.25, "Flop": 0.5, "Turn": 0.75, "River": 1.0}
         features["stage"] = stage_values.get(game_state.get("state_name", "Pre-Flop"), 0.25)
         
-        # Opponent count
-        features["num_opponents"] = len(opponents_chips) / max(num_players - 1, 1)
+        # === Opponent Count (normalized to max 5 opponents in 6-player game) ===
+        features["num_active_opponents"] = min(num_active_opponents, 5) / 5.0
         
-        # Hand features
+        # === Pot Odds Feature ===
+        # Pot odds = call amount / (pot + call amount)
+        if call_amount > 0:
+            pot_odds = call_amount / (pot + call_amount)
+            features["pot_odds"] = min(pot_odds, 1.0)  # Cap at 1.0
+        else:
+            features["pot_odds"] = 0.0  # No cost to continue
+        
+        # === Stack Features ===
+        # Stack to pot ratio (higher = more room to maneuver)
+        features["stack_to_pot_ratio"] = self.chips / pot if pot > 0 else 1.0
+        features["stack_to_pot_ratio"] = min(features["stack_to_pot_ratio"], 10.0) / 10.0  # Normalize to 0-1
+        
+        # Relative stack size compared to average opponent
+        if avg_opponent_chips > 0:
+            features["relative_stack_size"] = self.chips / avg_opponent_chips
+            features["relative_stack_size"] = min(features["relative_stack_size"], 3.0) / 3.0  # Normalize
+        else:
+            features["relative_stack_size"] = 1.0
+        
+        # === Community Cards ===
+        community_cards = game_state.get("community_cards", [])
+        features["num_community_cards"] = len(community_cards) / 5.0  # Normalize to 0-1
+        
+        # === Hand Features ===
         if len(self.hand) >= 2:
-            features["pair_in_hand"] = 1.0 if self.hand[0].value == self.hand[1].value else 0.0
+            card1, card2 = self.hand[0], self.hand[1]
+            features["pair_in_hand"] = 1.0 if card1.value == card2.value else 0.0
             features["high_card"] = max(c.value for c in self.hand) / 14.0
-            features["suited"] = 1.0 if self.hand[0].suit == self.hand[1].suit else 0.0
-            gap = abs(self.hand[0].value - self.hand[1].value)
+            features["suited"] = 1.0 if card1.suit == card2.suit else 0.0
+            gap = abs(card1.value - card2.value)
             features["connected"] = 1.0 if gap == 1 else 0.0
             features["hand_strength"] = sum(c.value for c in self.hand) / 28.0
         else:
@@ -411,10 +442,6 @@ class DQNAgent(BaseAgent):
             self.wins += 1
         elif self.chips < self.last_chips:
             self.losses += 1
-        
-        # Periodic save
-        if self.training_episodes % 100 == 0 and self.model_save_path:
-            self.save_model(self.model_save_path)
     
     def _calculate_reward(self) -> float:
         """Calculate reward based on chip change."""
