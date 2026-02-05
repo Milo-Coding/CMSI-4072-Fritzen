@@ -6,8 +6,10 @@ Train DQN agents by playing against various opponents.
 
 Usage:
     python -m scripts.train_agent --games 1000 --hands 20
+    python -m scripts.train_agent --opponent random --players 4 --games 5000
     python -m scripts.train_agent --opponent random --save-path ./models/my_agent.pth
     python -m scripts.train_agent --load-path ./models/existing.pth --games 500
+    python -m scripts.train_agent --players 6 --opponent dqn-train --games 10000
 """
 
 import argparse
@@ -51,6 +53,7 @@ def train(
     initial_chips: int = 1000,
     small_blind: int = 10,
     opponent_type: str = "random",
+    num_players: int = 2,
     model_load_path: str = None,
     model_save_path: str = "./models/trained_agent.pth",
     save_every: int = 100,
@@ -65,6 +68,7 @@ def train(
         initial_chips: Starting chip stack
         small_blind: Small blind amount
         opponent_type: Type of opponent (random, dqn, dqn-train)
+        num_players: Total number of players (2-6), includes the trainee
         model_load_path: Path to load existing model
         model_save_path: Path to save trained model
         save_every: Save model every N games
@@ -72,6 +76,10 @@ def train(
     """
     # Ensure models directory exists
     Path(model_save_path).parent.mkdir(parents=True, exist_ok=True)
+    
+    # Validate player count
+    if num_players < 2 or num_players > 6:
+        raise ValueError("Number of players must be between 2 and 6")
     
     # Create training agent
     training_agent = AgentRegistry.create(
@@ -84,8 +92,12 @@ def train(
         model_save_path=model_save_path
     )
     
-    # Create opponent
-    opponent = create_opponent(opponent_type, initial_chips, "opponent")
+    # Create opponents (num_players - 1 opponents)
+    opponents = []
+    for i in range(num_players - 1):
+        opponent = create_opponent(opponent_type, initial_chips, f"opponent_{i+1}")
+        opponent.name = f"{opponent.name}_{i+1}"
+        opponents.append(opponent)
     
     # Statistics tracking
     stats = {
@@ -102,10 +114,11 @@ def train(
         print("🎰 Poker Agent Training")
         print("=" * 60)
         print(f"Games: {num_games}")
+        print(f"Players: {num_players}")
         print(f"Hands per game: {hands_per_game}")
         print(f"Initial chips: ${initial_chips}")
         print(f"Blinds: ${small_blind}/${small_blind * 2}")
-        print(f"Opponent: {opponent_type}")
+        print(f"Opponent type: {opponent_type}")
         print(f"Save path: {model_save_path}")
         if model_load_path:
             print(f"Loaded from: {model_load_path}")
@@ -114,17 +127,23 @@ def train(
     
     try:
         for game_num in range(num_games):
-            # Alternate positions each game
-            if game_num % 2 == 0:
-                players = [training_agent, opponent]
-                trainee_idx = 0
-            else:
-                players = [opponent, training_agent]
-                trainee_idx = 1
+            # Rotate trainee position each game
+            trainee_position = game_num % num_players
+            players = []
+            
+            # Build player list with trainee at rotating position
+            opponent_idx = 0
+            for pos in range(num_players):
+                if pos == trainee_position:
+                    players.append(training_agent)
+                else:
+                    players.append(opponents[opponent_idx])
+                    opponent_idx += 1
             
             # Reset chips for new game
             reset_player(training_agent, initial_chips)
-            reset_player(opponent, initial_chips)
+            for opponent in opponents:
+                reset_player(opponent, initial_chips)
             
             # Track starting chips
             trainee_start_chips = training_agent.chips
@@ -146,17 +165,21 @@ def train(
                 hands_this_game += 1
                 stats["hands_played"] += 1
             
-            # Determine game winner
+            # Determine game winner (player with most chips)
             stats["games_played"] += 1
-            if training_agent.chips > opponent.chips:
-                stats["trainee_game_wins"] += 1
-            elif opponent.chips > training_agent.chips:
-                stats["opponent_game_wins"] += 1
-            else:
+            all_players = [training_agent] + opponents
+            max_chips = max(p.chips for p in all_players)
+            winners = [p for p in all_players if p.chips == max_chips]
+            
+            if len(winners) > 1:
                 stats["ties"] += 1
+            elif training_agent in winners:
+                stats["trainee_game_wins"] += 1
+            else:
+                stats["opponent_game_wins"] += 1
             
             # Progress update
-            if verbose and (game_num + 1) % 50 == 0:
+            if verbose and (game_num + 1) % 500 == 0:
                 win_rate = stats["trainee_game_wins"] / stats["games_played"] * 100
                 epsilon = training_agent.epsilon if hasattr(training_agent, 'epsilon') else 0
                 print(f"Game {game_num + 1}/{num_games} | "
@@ -240,6 +263,14 @@ def main():
     )
     
     parser.add_argument(
+        "--players", "-p",
+        type=int,
+        default=2,
+        choices=[2, 3, 4, 5, 6],
+        help="Total number of players (2-6)"
+    )
+    
+    parser.add_argument(
         "--load-path", "-l",
         type=str,
         default=None,
@@ -274,6 +305,7 @@ def main():
         initial_chips=args.chips,
         small_blind=args.blind,
         opponent_type=args.opponent,
+        num_players=args.players,
         model_load_path=args.load_path,
         model_save_path=args.save_path,
         save_every=args.save_every,
