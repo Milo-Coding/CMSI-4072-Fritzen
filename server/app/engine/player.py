@@ -119,6 +119,7 @@ class Player:
 
         # Amount the player needs to put in now (target - already contributed)
         to_put = new_wager - self.current_bet_in_round
+        
         paid = self._remove_chips(to_put)
         self.current_bet_in_round += paid
         self.has_acted_this_round = True
