@@ -77,6 +77,8 @@ class Game:
         self.pot = 0
         self.current_table_bet = 0  # highest bet in current betting round
         self.side_pots: List[Dict[str, Any]] = []  # List of side pots {amount, eligible_players}
+        self.action_log: List[Dict[str, Any]] = []  # Track player actions for UI display
+        self.showdown_hands: List[Dict[str, Any]] = []  # Revealed hands at showdown
         
         self.debug_mode = debug_mode
         self.debug_community: List[Card] = []
@@ -221,6 +223,8 @@ class Game:
         self.current_table_bet = 0
         self.side_pots = []
         self.action_history = []
+        self.action_log = []
+        self.showdown_hands = []
         
         # Notify agents that a new hand is starting
         game_state = {
@@ -792,6 +796,18 @@ class Game:
         for p in contenders:
             rank = evaluate_best_five(p.hand + self.community_cards)
             ranked.append((rank, p))
+        
+        # Store showdown hands for UI display
+        self.showdown_hands = [
+            {
+                "player_id": p.player_id,
+                "player_name": p.name,
+                "hand": [c.to_dict() for c in p.hand],
+                "hand_rank": get_hand_name(r[0]),
+                "rank_value": r[0].value
+            }
+            for r, p in ranked
+        ]
             
         self.emit_event(GameEventType.SHOWDOWN, {
             "hands": [
@@ -874,7 +890,9 @@ class Game:
             "community_cards": [c.to_dict() for c in self.community_cards],
             "players": [p.to_dict() for p in self.players],
             "active_player_count": len(self._get_active_players()),
-            "side_pots": self.side_pots
+            "side_pots": self.side_pots,
+            "action_log": self.action_log,
+            "showdown_hands": self.showdown_hands
         }
     
     def get_player_view(self, player_id: str) -> dict:
@@ -899,5 +917,7 @@ class Game:
             "community_cards": [c.to_dict() for c in self.community_cards],
             "players": [p.to_dict(hide_cards=(p.player_id != player_id)) for p in self.players],
             "active_player_count": len(self._get_active_players()),
-            "side_pots": self.side_pots
+            "side_pots": self.side_pots,
+            "action_log": self.action_log,
+            "showdown_hands": self.showdown_hands
         }

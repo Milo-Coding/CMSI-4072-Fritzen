@@ -327,6 +327,20 @@ class RoomManager:
         room.game.play_hand()
         return True
     
+    def _log_action(self, room: 'Room', player_id: str, action: str, amount: Optional[int] = None):
+        """Log a player action to the game's action log."""
+        player = next((p for p in room.players if p.player_id == player_id), None)
+        if player and room.game:
+            log_entry = {
+                "player_id": player_id,
+                "player_name": player.name,
+                "action": action,
+                "timestamp": room.game.hand_number
+            }
+            if amount is not None:
+                log_entry["amount"] = amount
+            room.game.action_log.append(log_entry)
+    
     def get_game_state(self, room_id: str, player_id: Optional[str] = None) -> Optional[dict]:
         """
         Get game state for a room.
@@ -524,18 +538,22 @@ class RoomManager:
         try:
             if action == "fold":
                 player.do_fold()
+                self._log_action(room, player_id, "fold")
             elif action == "check":
                 if not player.do_check(room.game.current_table_bet):
                     return {"success": False, "error": "Cannot check"}
+                self._log_action(room, player_id, "check")
             elif action == "call":
                 contributed = player.do_call(room.game.current_table_bet)
                 room.game.pot += contributed
+                self._log_action(room, player_id, "call", contributed)
                 # If player is now out of chips, they're all-in
                 if player.chips == 0 and player.is_playing_round:
                     action = "all_in"  # Update action name for display
             elif action == "all_in":
                 contributed = player.do_all_in()
                 room.game.pot += contributed
+                self._log_action(room, player_id, "all-in", contributed)
                 # Update table bet if this all-in raises it
                 if player.current_bet_in_round > room.game.current_table_bet:
                     room.game.current_table_bet = player.current_bet_in_round
@@ -545,6 +563,7 @@ class RoomManager:
                 contributed = player.do_bet(amount)
                 room.game.current_table_bet = contributed
                 room.game.pot += contributed
+                self._log_action(room, player_id, "bet", amount)
                 # If player is now out of chips, they're all-in
                 if player.chips == 0 and player.is_playing_round:
                     action = "all_in"
@@ -555,6 +574,7 @@ class RoomManager:
                 if new_wager != -1:
                     room.game.current_table_bet = new_wager
                     room.game.pot += added
+                    self._log_action(room, player_id, "raise", amount)
                     # If player is now out of chips, they're all-in
                     if player.chips == 0 and player.is_playing_round:
                         action = "all_in"

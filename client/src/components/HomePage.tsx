@@ -323,7 +323,7 @@ function HomePage({ onJoinRoom }: HomePageProps) {
   return (
     <div className="home-page">
       <div className="hero">
-        <h1 className="title">♠️ Multiplayer Poker ♥️</h1>
+        <h1 className="title">♠️ MultiplAIyer Poker ♥️</h1>
         <p className="subtitle">Play Texas Hold'em with friends online</p>
       </div>
 

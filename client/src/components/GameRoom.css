@@ -149,7 +149,7 @@
 /* Players Area */
 .players-area {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 1rem;
   padding: 0 1rem;
 }
@@ -377,4 +377,162 @@
   border-radius: 8px;
   margin-bottom: 1rem;
   text-align: center;
+}
+
+/* Showdown Display */
+.showdown-display {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background: rgba(255, 215, 0, 0.1);
+  border: 2px solid #ffd700;
+  border-radius: 12px;
+}
+
+.showdown-display h3 {
+  text-align: center;
+  color: #ffd700;
+  margin-top: 0;
+  font-size: 1.5rem;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.showdown-hands {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.showdown-hand {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 2px solid transparent;
+}
+
+.showdown-hand.winner {
+  background: rgba(255, 215, 0, 0.2);
+  border-color: #ffd700;
+}
+
+.showdown-player {
+  min-width: 120px;
+  font-weight: bold;
+  color: #f0f0f0;
+}
+
+.showdown-cards {
+  display: flex;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.card.small {
+  width: 50px;
+  height: 70px;
+  font-size: 0.8rem;
+}
+
+.showdown-rank {
+  min-width: 150px;
+  text-align: right;
+  color: #4caf50;
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.showdown-hand.winner .showdown-rank {
+  color: #ffd700;
+}
+
+/* Action Log */
+.game-main {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.game-main .community-area {
+  flex: 1;
+}
+
+.action-log {
+  width: 280px;
+  max-height: 500px;
+  background: rgba(30, 30, 30, 0.95);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.action-log h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #f0f0f0;
+  font-size: 1.1rem;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0.5rem;
+}
+
+.log-entries {
+  max-height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.log-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.log-player {
+  font-weight: bold;
+  color: #90caf9;
+  min-width: 80px;
+}
+
+.log-action {
+  color: #f0f0f0;
+  text-transform: capitalize;
+  flex: 1;
+}
+
+.log-amount {
+  color: #ffd700;
+  font-weight: bold;
+}
+
+.log-empty {
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  padding: 2rem 1rem;
+  font-style: italic;
+}
+
+/* Scrollbar styling for action log */
+.log-entries::-webkit-scrollbar {
+  width: 8px;
+}
+
+.log-entries::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.log-entries::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.log-entries::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }

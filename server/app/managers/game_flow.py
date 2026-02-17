@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any
 from ..engine import Game, Player
 from ..engine.game import GamePhase, GameEventType
 from ..engine.agents import BaseAgent
-from ..engine.evaluator import evaluate_best_five
+from ..engine.evaluator import evaluate_best_five, get_hand_name
 
 
 class GameFlowManager:
@@ -136,6 +136,18 @@ class GameFlowManager:
                     "player": player,
                     "rank": rank
                 })
+        
+        # Store showdown hands for UI display
+        game.showdown_hands = [
+            {
+                "player_id": r["player"].player_id,
+                "player_name": r["player"].name,
+                "hand": [c.to_dict() for c in r["player"].hand],
+                "hand_rank": get_hand_name(r["rank"][0]),
+                "rank_value": r["rank"][0].value
+            }
+            for r in results
+        ]
         
         # Find winner(s)
         if results:

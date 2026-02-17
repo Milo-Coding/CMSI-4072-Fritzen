@@ -39,6 +39,20 @@ interface GameState {
   game_over: boolean;
   winner: { player_id: string; name: string; chips: number } | null;
   side_pots: { amount: number; eligible_players: string[]; bet_cap: number }[];
+  action_log: {
+    player_id: string;
+    player_name: string;
+    action: string;
+    amount?: number;
+    timestamp: number;
+  }[];
+  showdown_hands: {
+    player_id: string;
+    player_name: string;
+    hand: Card[];
+    hand_rank: string;
+    rank_value: number;
+  }[];
 }
 
 interface Room {
@@ -270,35 +284,97 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
 
       {room?.is_active && gameState && (
         <div className="game-area">
-          {/* Community Cards */}
-          <div className="community-area">
-            <div className="pot-display">
-              <span className="pot-label">Pot</span>
-              <span className="pot-amount">${gameState.pot || 0}</span>
-              {gameState.side_pots && gameState.side_pots.length > 0 && (
-                <div className="side-pots">
-                  {gameState.side_pots.map((sidePot, idx) => (
-                    <div key={idx} className="side-pot">
-                      Side Pot {idx + 1}: ${sidePot.amount} (cap: $
-                      {sidePot.bet_cap})
+          <div className="game-main">
+            {/* Community Cards */}
+            <div className="community-area">
+              <div className="pot-display">
+                <span className="pot-label">Pot</span>
+                <span className="pot-amount">${gameState.pot || 0}</span>
+                {gameState.side_pots && gameState.side_pots.length > 0 && (
+                  <div className="side-pots">
+                    {gameState.side_pots.map((sidePot, idx) => (
+                      <div key={idx} className="side-pot">
+                        Side Pot {idx + 1}: ${sidePot.amount} (cap: $
+                        {sidePot.bet_cap})
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="community-cards">
+                {(gameState.community_cards || []).map((card, idx) => (
+                  <div key={idx} className={`card ${getSuitColor(card.suit)}`}>
+                    <div className="card-value">{card.display}</div>
+                  </div>
+                ))}
+                {(!gameState.community_cards ||
+                  gameState.community_cards.length === 0) && (
+                  <div className="no-cards">No community cards yet</div>
+                )}
+              </div>
+              <div className="phase-indicator">
+                {gameState.phase || "waiting"}
+              </div>
+
+              {/* Showdown Hands Display */}
+              {gameState.showdown_hands &&
+                gameState.showdown_hands.length > 0 && (
+                  <div className="showdown-display">
+                    <h3>Showdown!</h3>
+                    <div className="showdown-hands">
+                      {gameState.showdown_hands
+                        .sort((a, b) => b.rank_value - a.rank_value)
+                        .map((hand, idx) => (
+                          <div
+                            key={hand.player_id}
+                            className={`showdown-hand ${idx === 0 ? "winner" : ""}`}
+                          >
+                            <div className="showdown-player">
+                              {hand.player_name}
+                            </div>
+                            <div className="showdown-cards">
+                              {hand.hand.map((card, cardIdx) => (
+                                <div
+                                  key={cardIdx}
+                                  className={`card small ${getSuitColor(card.suit)}`}
+                                >
+                                  <div className="card-value">
+                                    {card.display}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="showdown-rank">
+                              {hand.hand_rank}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+            </div>
+
+            {/* Action Log */}
+            <div className="action-log">
+              <h3>Action Log</h3>
+              <div className="log-entries">
+                {(gameState.action_log || [])
+                  .slice()
+                  .reverse()
+                  .map((entry, idx) => (
+                    <div key={idx} className="log-entry">
+                      <span className="log-player">{entry.player_name}</span>
+                      <span className="log-action">{entry.action}</span>
+                      {entry.amount !== undefined && (
+                        <span className="log-amount">${entry.amount}</span>
+                      )}
                     </div>
                   ))}
-                </div>
-              )}
-            </div>
-            <div className="community-cards">
-              {(gameState.community_cards || []).map((card, idx) => (
-                <div key={idx} className={`card ${getSuitColor(card.suit)}`}>
-                  <div className="card-value">{card.display}</div>
-                </div>
-              ))}
-              {(!gameState.community_cards ||
-                gameState.community_cards.length === 0) && (
-                <div className="no-cards">No community cards yet</div>
-              )}
-            </div>
-            <div className="phase-indicator">
-              {gameState.phase || "waiting"}
+                {(!gameState.action_log ||
+                  gameState.action_log.length === 0) && (
+                  <div className="log-empty">No actions yet</div>
+                )}
+              </div>
             </div>
           </div>
 
