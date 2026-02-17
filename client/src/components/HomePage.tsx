@@ -24,8 +24,13 @@ interface RoomConfig {
 
 const API_BASE = "http://localhost:8000/api";
 
-function HomePage() {
+interface HomePageProps {
+  onJoinRoom: (roomId: string, playerName: string) => void;
+}
+
+function HomePage({ onJoinRoom }: HomePageProps) {
   const [view, setView] = useState<"home" | "create" | "browse">("home");
+  const [playerName, setPlayerName] = useState("");
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +66,11 @@ function HomePage() {
   };
 
   const createRoom = async () => {
+    if (!playerName.trim()) {
+      setError("Please enter your name");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -85,9 +95,8 @@ function HomePage() {
       if (!response.ok) throw new Error("Failed to create room");
 
       const room = await response.json();
-      alert(`Room created! ID: ${room.room_id}`);
-      // TODO: Navigate to game room
-      setView("home");
+      // Auto-join the created room
+      onJoinRoom(room.id, playerName);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create room");
     } finally {
@@ -96,8 +105,11 @@ function HomePage() {
   };
 
   const joinRoom = (roomId: string) => {
-    alert(`Joining room ${roomId} - Game UI coming soon!`);
-    // TODO: Navigate to game room with WebSocket connection
+    if (!playerName.trim()) {
+      setError("Please enter your name");
+      return;
+    }
+    onJoinRoom(roomId, playerName);
   };
 
   if (view === "create") {
@@ -112,6 +124,18 @@ function HomePage() {
 
         <div className="create-room-form">
           {error && <div className="error-message">{error}</div>}
+
+          <div className="form-group">
+            <label htmlFor="player-name">Your Name *</label>
+            <input
+              id="player-name"
+              type="text"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              placeholder="Enter your name"
+              required
+            />
+          </div>
 
           <div className="form-group">
             <label htmlFor="room-name">Room Name (optional)</label>
@@ -223,6 +247,21 @@ function HomePage() {
           <button onClick={fetchRooms} className="refresh-button">
             ↻ Refresh
           </button>
+        </div>
+
+        <div
+          className="form-group"
+          style={{ maxWidth: "400px", margin: "0 auto 2rem" }}
+        >
+          <label htmlFor="browse-player-name">Your Name *</label>
+          <input
+            id="browse-player-name"
+            type="text"
+            value={playerName}
+            onChange={(e) => setPlayerName(e.target.value)}
+            placeholder="Enter your name"
+            required
+          />
         </div>
 
         {error && <div className="error-message">{error}</div>}

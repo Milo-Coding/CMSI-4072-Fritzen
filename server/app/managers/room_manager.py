@@ -10,8 +10,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from ..engine import Game, Player, GameEventType
+from ..engine.game import GamePhase
 from ..engine.agents import AgentRegistry, BaseAgent
 from ..models.schemas import RoomConfig
+from .game_flow import GameFlowManager
 
 
 @dataclass
@@ -28,6 +30,7 @@ class Room:
     players: List[Player] = field(default_factory=list)
     is_active: bool = False
     created_at: datetime = field(default_factory=datetime.now)
+    current_player_index: Optional[int] = None  # Track whose turn it is
     
     # Event callbacks for broadcasting
     _event_callbacks: List[Callable] = field(default_factory=list)
@@ -259,7 +262,47 @@ class RoomManager:
         
         room.is_active = True
         
+        # Initialize the first hand (deal cards, post blinds) but don't play it
+        # The play will be driven by WebSocket player actions
+        room.game.hand_number += 1
+        room.game.current_phase = GamePhase.PRE_FLOP
+        room.game.emit_event(GameEventType.HAND_STARTED, {
+            "hand_number": room.game.hand_number,
+            "dealer_index": room.game.dealer_index
+        })
+        room.game._prepare_new_hand()
+        room.game._post_blinds()
+        room.game._deal_hole_cards()
+        room.game.emit_event(GameEventType.HOLE_CARDS_DEALT, {
+            "players": [p.to_dict(hide_cards=True) for p in room.players]
+        })
+        
+        # Set the first player to act
+        room.current_player_index = GameFlowManager.get_starting_player_index(room.game)
+        
+        # Kick off the action sequence - if first player is AI, they'll act automatically
+        self._start_action_sequence(room)
+        
         return True
+    
+    def _start_action_sequence(self, room: "Room"):
+        """Start the action sequence, checking if current player needs to act."""
+        if not room.game or room.current_player_index is None:
+            return
+        
+        current_player = room.players[room.current_player_index]
+        
+        # If current player is AI, have them act and continue the flow
+        if isinstance(current_player, BaseAgent) or (hasattr(current_player, 'decide_action') and not hasattr(current_player, 'is_human')):
+            try:
+                self._execute_ai_action(room, current_player)
+                # Continue the game flow
+                self._progress_game_after_action(room)
+            except Exception as e:
+                print(f"Error in initial AI action: {e}")
+                import traceback
+                traceback.print_exc()
+        # Otherwise it's a human's turn, they'll act via WebSocket
     
     def play_hand(self, room_id: str) -> bool:
         """
@@ -293,16 +336,102 @@ class RoomManager:
         if not room or not room.game:
             return None
         
+        state = room.game.get_player_view(player_id) if player_id else room.game.get_state()
+        
+        # Extract current player's hand for easy frontend access
         if player_id:
-            return room.game.get_player_view(player_id)
-        return room.game.get_state()
+            for player_data in state.get("players", []):
+                if player_data["player_id"] == player_id:
+                    state["your_hand"] = player_data.get("hand", [])
+                    # Find player index
+                    for idx, p in enumerate(room.players):
+                        if p.player_id == player_id:
+                            state["your_index"] = idx
+                            break
+                    break
+            # Set default if not found
+            if "your_hand" not in state:
+                state["your_hand"] = []
+                state["your_index"] = -1
+        
+        # Add whose turn it is and available actions
+        if room.current_player_index is not None:
+            current_player = room.players[room.current_player_index]
+            state["current_player_id"] = current_player.player_id
+            state["current_player_index"] = room.current_player_index
+            
+            # If this is the current player's view, add available actions
+            if player_id and player_id == current_player.player_id:
+                call_amount = room.game.current_table_bet - current_player.current_bet_in_round
+                state["available_actions"] = room.game._get_available_actions(current_player, call_amount)
+                state["call_amount"] = call_amount
+                state["is_your_turn"] = True
+            else:
+                state["available_actions"] = []
+                state["call_amount"] = 0
+                state["is_your_turn"] = False
+        else:
+            state["current_player_id"] = None
+            state["current_player_index"] = None
+            state["available_actions"] = []
+            state["call_amount"] = 0
+            state["is_your_turn"] = False
+        
+        # Add hand_over flag - true if no current player (hand finished)
+        state["hand_over"] = room.current_player_index is None and room.is_active
+        
+        return state
+    
+    def deal_next_hand(self, room_id: str) -> bool:
+        """
+        Deal the next hand in a room.
+        
+        Args:
+            room_id: Room ID
+            
+        Returns:
+            True if next hand started, False otherwise
+        """
+        room = self.get_room(room_id)
+        if not room or not room.game or not room.is_active:
+            return False
+        
+        # Reset for new hand
+        room.game.hand_number += 1
+        room.game.current_phase = GamePhase.PRE_FLOP
+        
+        # Advance dealer
+        room.game.dealer_index = (room.game.dealer_index + 1) % len(room.players)
+        
+        room.game.emit_event(GameEventType.HAND_STARTED, {
+            "hand_number": room.game.hand_number,
+            "dealer_index": room.game.dealer_index
+        })
+        
+        # Prepare and deal new hand
+        room.game._prepare_new_hand()
+        room.game._post_blinds()
+        room.game._deal_hole_cards()
+        
+        room.game.emit_event(GameEventType.HOLE_CARDS_DEALT, {
+            "players": [p.to_dict(hide_cards=True) for p in room.players]
+        })
+        
+        # Set the first player to act
+        room.current_player_index = GameFlowManager.get_starting_player_index(room.game)
+        
+        # Kick off the action sequence
+        self._start_action_sequence(room)
+        
+        return True
     
     def execute_action(
         self, 
         room_id: str, 
         player_id: str, 
         action: str, 
-        amount: Optional[int] = None
+        amount: Optional[int] = None,
+        auto_progress: bool = True
     ) -> dict:
         """
         Execute a player action in a room.
@@ -312,6 +441,7 @@ class RoomManager:
             player_id: Player making action
             action: Action type
             amount: Amount for bet/raise
+            auto_progress: Whether to auto-progress the game after action
             
         Returns:
             Result of the action
@@ -358,6 +488,13 @@ class RoomManager:
             else:
                 return {"success": False, "error": f"Unknown action: {action}"}
             
+            # Mark that the player has acted
+            player.has_acted_this_round = True
+            
+            # Progress the game if requested
+            if auto_progress:
+                self._progress_game_after_action(room)
+            
             return {
                 "success": True,
                 "action": action,
@@ -366,4 +503,96 @@ class RoomManager:
                 "pot": room.game.pot
             }
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": str(e)}    
+    def _progress_game_after_action(self, room: "Room"):
+        """Progress the game after a player action until it's a human's turn or hand ends."""
+        if not room.game:
+            return
+        
+        # First check if hand is already over (only one player left after fold)
+        active_players = [p for p in room.players if p.is_playing_round]
+        if len(active_players) <= 1:
+            # Hand over due to folds
+            GameFlowManager._award_pot(room.game)
+            room.current_player_index = None
+            room.game.emit_event(GameEventType.HAND_ENDED, {
+                "hand_number": room.game.hand_number
+            })
+            return
+        
+        while True:
+            # Find next player to act
+            next_index = GameFlowManager.get_next_player_to_act(
+                room.game, 
+                room.current_player_index or 0
+            )
+            
+            if next_index is None:
+                # Betting round complete, advance to next phase
+                continues = GameFlowManager.advance_to_next_phase(room.game)
+                if not continues:
+                    # Hand is over
+                    room.current_player_index = None
+                    break
+                
+                # Get first player for new phase
+                next_index = GameFlowManager.get_starting_player_index(room.game)
+            
+            room.current_player_index = next_index
+            next_player = room.players[next_index]
+            
+            # If it's an AI agent, have them act automatically
+            if isinstance(next_player, BaseAgent) or (hasattr(next_player, 'decide_action') and not hasattr(next_player, 'is_human')):
+                try:
+                    self._execute_ai_action(room, next_player)
+                    # Continue loop to process next player
+                except Exception as e:
+                    print(f"Error executing AI action: {e}")
+                    # Stop on error to avoid infinite loop
+                    break
+            else:
+                # It's a human player's turn - stop and wait for their action
+                break
+        
+        # If we exited the loop with current_player_index = None, hand is over
+        if room.current_player_index is None:
+            room.game.emit_event(GameEventType.HAND_ENDED, {
+                "hand_number": room.game.hand_number
+            })
+    
+    def _execute_ai_action(self, room: "Room", player: Player):
+        """Execute an AI player's action."""
+        if not room.game:
+            return
+        
+        print(f"AI Player {player.name} ({player.player_id}) is taking action...")
+        
+        # Build game state for AI
+        call_amount = room.game.current_table_bet - player.current_bet_in_round
+        available_actions = room.game._get_available_actions(player, call_amount)
+        
+        game_state = {
+            "state_name": str(room.game.current_phase.value),
+            "available_actions": available_actions,
+            "call_amount": call_amount,
+            "current_table_bet": room.game.current_table_bet,
+            "pot": room.game.pot,
+            "community_cards": [c.to_dict() for c in room.game.community_cards],
+            "opponents_chips": [p.chips for p in room.players if p != player and p.is_playing_round],
+            "dealer_index": room.game.dealer_index,
+            "agent_index": room.players.index(player),
+            "players": [p.to_dict(hide_cards=(p != player)) for p in room.players]
+        }
+        
+        # Get AI decision
+        decision = player.decide_action(game_state)
+        print(f"AI decision: {decision}")
+        
+        # Execute the decision without auto-progressing (we're already in progress loop)
+        if isinstance(decision, tuple):
+            action, amount = decision
+            result = self.execute_action(room.id, player.player_id, action, amount, auto_progress=False)
+            print(f"AI action result: {result}")
+        else:
+            result = self.execute_action(room.id, player.player_id, decision, auto_progress=False)
+            print(f"AI action result: {result}")

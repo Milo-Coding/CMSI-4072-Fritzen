@@ -192,6 +192,9 @@ class ConnectionManager:
             "type": WSMessageType.PLAYER_ACTION_TAKEN.value,
             "data": result
         })
+        
+        # Broadcast updated game state to all players
+        await self.broadcast_game_state(session.current_room)
     
     async def handle_start_game(self, websocket: WebSocket, player_id: str):
         """Handle request to start the game."""
@@ -204,10 +207,21 @@ class ConnectionManager:
             await self.send_error(websocket, "START_FAILED", "Cannot start game")
             return
         
-        # Play a hand
-        self.room_manager.play_hand(session.current_room)
+        # Broadcast the initial state
+        await self.broadcast_game_state(session.current_room)
+    
+    async def handle_next_hand(self, websocket: WebSocket, player_id: str):
+        """Handle request to deal the next hand."""
+        session = self.player_manager.get_session(player_id)
+        if not session or not session.current_room:
+            await self.send_error(websocket, "NOT_IN_ROOM", "Not in a room")
+            return
         
-        # Broadcast new state to all players
+        if not self.room_manager.deal_next_hand(session.current_room):
+            await self.send_error(websocket, "NEXT_HAND_FAILED", "Cannot deal next hand")
+            return
+        
+        # Broadcast the updated state
         await self.broadcast_game_state(session.current_room)
     
     async def send_game_state(self, websocket: WebSocket, room_id: str, player_id: str):
@@ -302,6 +316,9 @@ async def game_websocket(
             
             elif message_type == WSMessageType.START_GAME.value:
                 await manager.handle_start_game(websocket, player_id)
+            
+            elif message_type == WSMessageType.NEXT_HAND.value:
+                await manager.handle_next_hand(websocket, player_id)
             
             else:
                 await manager.send_error(
