@@ -705,12 +705,15 @@ class Game:
         Returns:
             dict: Game state with hidden opponent cards
         """
-        state = self.get_state()
-        
-        # Hide other players' cards
-        for player_data in state["players"]:
-            if player_data["player_id"] != player_id:
-                player_data["hand"] = []  # Hide cards
-                player_data["hand_size"] = len(player_data.get("hand", []))
-        
-        return state
+        return {
+            "hand_number": self.hand_number,
+            "phase": self.current_phase.value,
+            "dealer_index": self.dealer_index,
+            "pot": self.pot,
+            "current_bet": self.current_table_bet,
+            "small_blind": self.small_blind,
+            "big_blind": self.big_blind,
+            "community_cards": [c.to_dict() for c in self.community_cards],
+            "players": [p.to_dict(hide_cards=(p.player_id != player_id)) for p in self.players],
+            "active_player_count": len(self._get_active_players())
+        }
