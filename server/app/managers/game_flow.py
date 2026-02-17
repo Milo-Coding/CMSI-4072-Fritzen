@@ -69,9 +69,6 @@ class GameFlowManager:
         Returns:
             True if game continues, False if hand is over
         """
-        # Calculate side pots before resetting betting round
-        game._calculate_side_pots()
-        
         # Reset betting round state
         for player in game.players:
             player.reset_for_new_betting_round()
@@ -123,7 +120,7 @@ class GameFlowManager:
     
     @staticmethod
     def _showdown(game: Game):
-        """Execute showdown."""
+        """Execute showdown with proper side pot distribution."""
         active = [p for p in game.players if p.is_playing_round]
         
         # Evaluate hands
@@ -149,29 +146,18 @@ class GameFlowManager:
             for r in results
         ]
         
-        # Find winner(s)
-        if results:
-            results.sort(key=lambda x: x["rank"], reverse=True)
-            best_rank = results[0]["rank"]
-            winners = [r for r in results if r["rank"] == best_rank]
-            
-            game.emit_event(GameEventType.SHOWDOWN, {
-                "results": [{
-                    "player_id": r["player"].player_id,
-                    "hand": [c.to_dict() for c in r["player"].hand],
-                    "rank": r["rank"][0]  # Just the HandRank enum value
-                } for r in results]
-            })
-            
-            # Award pot
-            pot_share = game.pot // len(winners)
-            for winner_data in winners:
-                winner_data["player"]._add_chips(pot_share)
-            
-            game.emit_event(GameEventType.POT_AWARDED, {
-                "winners": [w["player"].player_id for w in winners],
-                "amount": pot_share
-            })
+        # Emit showdown event
+        game.emit_event(GameEventType.SHOWDOWN, {
+            "results": [{
+                "player_id": r["player"].player_id,
+                "hand": [c.to_dict() for c in r["player"].hand],
+                "rank": r["rank"][0]  # Just the HandRank enum value
+            } for r in results]
+        })
+        
+        # Calculate and award pots using side pot system
+        game._calculate_side_pots()
+        game._award_pots()
     
     @staticmethod
     def _award_pot(game: Game):

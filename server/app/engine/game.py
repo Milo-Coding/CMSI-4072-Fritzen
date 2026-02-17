@@ -263,7 +263,9 @@ class Game:
         bb_paid = big_blind_player._remove_chips(self.big_blind)
         
         small_blind_player.current_bet_in_round = sb_paid
+        small_blind_player.total_bet_in_hand = sb_paid
         big_blind_player.current_bet_in_round = bb_paid
+        big_blind_player.total_bet_in_hand = bb_paid
         self.current_table_bet = bb_paid
         self.pot += sb_paid + bb_paid
         
@@ -493,6 +495,14 @@ class Game:
 
     def _get_available_actions(self, player: Player, call_amount: int) -> List[str]:
         """Determine what actions the player can take."""
+        # All-in players (0 chips) have no actions available
+        if player.chips == 0:
+            return []
+            
+        # Folded players have no actions available
+        if not player.is_playing_round:
+            return []
+            
         actions = []
         
         actions.append("fold")
@@ -627,19 +637,29 @@ class Game:
         """
         Calculate main pot and side pots based on all-in players.
         
-        This is called at the end of each betting round to properly distribute
+        This is called at showdown to properly distribute
         chips into pots that each player is eligible to win.
-        """
-        # Get all players and their contributions
-        contributions = [(p, p.current_bet_in_round) for p in self.players]
-        # Sort by contribution amount
-        contributions.sort(key=lambda x: x[1])
+        Uses total_bet_in_hand which tracks cumulative contributions across all rounds.
         
+        Only creates side pots if at least one player is all-in.
+        """
         self.side_pots = []
         remaining_players = [p for p in self.players if p.is_playing_round]
         
         if len(remaining_players) <= 1:
             return
+        
+        # Check if anyone is all-in (has 0 chips but still in round)
+        has_all_in = any(p.chips == 0 and p.is_playing_round for p in self.players)
+        
+        if not has_all_in:
+            # No all-ins, no need for side pots
+            return
+        
+        # Get all players and their total contributions for the hand
+        contributions = [(p, p.total_bet_in_hand) for p in self.players]
+        # Sort by contribution amount
+        contributions.sort(key=lambda x: x[1])
         
         previous_level = 0
         
@@ -652,20 +672,36 @@ class Game:
             eligible_players = []
             
             for p in self.players:
-                if p.current_bet_in_round >= bet_amount and p.is_playing_round:
-                    eligible_players.append(p.player_id)
-                    # This player contributes (bet_amount - previous_level) to this pot
-                    contribution = min(p.current_bet_in_round, bet_amount) - previous_level
+                if p.total_bet_in_hand >= bet_amount:
+                    # All players who bet this amount contribute to this pot
+                    contribution = min(p.total_bet_in_hand, bet_amount) - previous_level
                     pot_size += contribution
+                    
+                    # Only players still in the round are eligible to win
+                    if p.is_playing_round:
+                        eligible_players.append(p.player_id)
             
-            if pot_size > 0 and len(eligible_players) > 0:
-                self.side_pots.append({
-                    "amount": pot_size,
-                    "eligible_players": eligible_players,
-                    "cap": bet_amount
-                })
+            if pot_size > 0:
+                if len(eligible_players) > 0:
+                    self.side_pots.append({
+                        "amount": pot_size,
+                        "eligible_players": eligible_players,
+                        "cap": bet_amount
+                    })
+                else:
+                    # No eligible winners left for this pot level (all folded)
+                    # This pot should go to remaining players in lower pot levels
+                    # For now, we'll add it to the last pot with eligible players
+                    if self.side_pots:
+                        self.side_pots[-1]["amount"] += pot_size
             
             previous_level = bet_amount
+        
+        # Validation: ensure side pots add up to main pot
+        if self.side_pots:
+            total_side_pot_amount = sum(pot["amount"] for pot in self.side_pots)
+            if abs(total_side_pot_amount - self.pot) > 0.01:  # Small tolerance for floating point
+                raise ValueError(f"Side pot calculation error: side pots total ${total_side_pot_amount}, main pot ${self.pot}")
     
     def _award_pots(self):
         """Award main pot and side pots at showdown."""
@@ -711,8 +747,15 @@ class Game:
                     winners = [p for r, p in ranked if r == best_rank]
                     
                     share = pot_amount // len(winners)
+                    remainder = pot_amount % len(winners)
+                    
+                    # Distribute main share to all winners
                     for winner in winners:
                         winner._add_chips(share)
+                    
+                    # Distribute remainder chips to first winner(s) to avoid losing chips
+                    for i in range(remainder):
+                        winners[i]._add_chips(1)
                     
                     self.emit_event(GameEventType.POT_AWARDED, {
                         "pot_type": "side" if pot_idx > 0 else "main",
@@ -758,9 +801,15 @@ class Game:
         best_rank = ranked[0][0]
         winners = [p for r, p in ranked if r == best_rank]
         share = self.pot // len(winners)
+        remainder = self.pot % len(winners)
         
+        # Distribute main share to all winners
         for w in winners:
             w._add_chips(share)
+        
+        # Distribute remainder chips to first winner(s) to avoid losing chips
+        for i in range(remainder):
+            winners[i]._add_chips(1)
         
         self.emit_event(GameEventType.POT_AWARDED, {
             "winners": [w.player_id for w in winners],

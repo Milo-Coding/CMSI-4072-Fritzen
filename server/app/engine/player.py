@@ -30,6 +30,7 @@ class Player:
 
         self.is_playing_round = True
         self.current_bet_in_round = 0  # amount invested in current betting street
+        self.total_bet_in_hand = 0  # total amount invested across all streets in this hand
         self.has_acted_this_round = False
         
         self.player_id = player_id or name or "unknown"
@@ -85,6 +86,7 @@ class Player:
             return 0
         paid = self._remove_chips(owed)
         self.current_bet_in_round += paid
+        self.total_bet_in_hand += paid
         self.has_acted_this_round = True
         if self.chips == 0:
             # Still in the hand but cannot take further betting actions (all-in)
@@ -100,6 +102,7 @@ class Player:
         """
         contributed = self._remove_chips(amount)
         self.current_bet_in_round += contributed
+        self.total_bet_in_hand += contributed
         self.has_acted_this_round = True
         return contributed
 
@@ -122,6 +125,7 @@ class Player:
         
         paid = self._remove_chips(to_put)
         self.current_bet_in_round += paid
+        self.total_bet_in_hand += paid
         self.has_acted_this_round = True
         return self.current_bet_in_round, paid
 
@@ -134,7 +138,9 @@ class Player:
             int: The total amount of chips the player had before going all in
         """
         all_in_amount = self.chips
-        self.current_bet_in_round += self._remove_chips(self.chips)
+        chip_amount = self._remove_chips(self.chips)
+        self.current_bet_in_round += chip_amount
+        self.total_bet_in_hand += chip_amount
         self.has_acted_this_round = True
         return all_in_amount
 
@@ -147,6 +153,7 @@ class Player:
         self.hand = []
         self.is_playing_round = self.chips > 0
         self.current_bet_in_round = 0
+        self.total_bet_in_hand = 0
         self.has_acted_this_round = False
 
     def reset_for_new_betting_round(self):
@@ -174,6 +181,7 @@ class Player:
             "hand": [] if hide_cards else [card.to_dict() for card in self.hand],
             "is_playing_round": self.is_playing_round,
             "current_bet_in_round": self.current_bet_in_round,
+            "total_bet_in_hand": self.total_bet_in_hand,
             "has_acted_this_round": self.has_acted_this_round,
             "is_all_in": self.chips == 0 and self.is_playing_round
         }
@@ -190,6 +198,7 @@ class Player:
             "hand_size": len(self.hand),  # Only show count, not cards
             "is_playing_round": self.is_playing_round,
             "current_bet_in_round": self.current_bet_in_round,
+            "total_bet_in_hand": self.total_bet_in_hand,
             "has_acted_this_round": self.has_acted_this_round
         }
     
@@ -204,6 +213,7 @@ class Player:
         )
         player.is_playing_round = data["is_playing_round"]
         player.current_bet_in_round = data["current_bet_in_round"]
+        player.total_bet_in_hand = data.get("total_bet_in_hand", 0)
         player.has_acted_this_round = data["has_acted_this_round"]
         return player
 

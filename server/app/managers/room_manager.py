@@ -667,6 +667,11 @@ class RoomManager:
         call_amount = room.game.current_table_bet - player.current_bet_in_round
         available_actions = room.game._get_available_actions(player, call_amount)
         
+        # Safety check: all-in or folded players should have no actions
+        if not available_actions:
+            print(f"AI Player {player.name} has no available actions (likely all-in or folded)")
+            return
+        
         game_state = {
             "state_name": str(room.game.current_phase.value),
             "available_actions": available_actions,
