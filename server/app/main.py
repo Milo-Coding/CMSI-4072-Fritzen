@@ -33,17 +33,6 @@ async def lifespan(app: FastAPI):
     set_managers(room_manager, player_manager)
     connection_manager.setup(room_manager, player_manager)
     
-    # Create a default lobby room
-    from .models.schemas import RoomConfig
-    default_room = room_manager.create_room(RoomConfig(
-        name="Lobby",
-        small_blind=10,
-        min_players=2,
-        max_players=6,
-        ai_players=0
-    ))
-    print(f"  Created default room: {default_room.name} ({default_room.id})")
-    
     # List available agents
     from .engine.agents import AgentRegistry
     print(f"  Available AI agents: {AgentRegistry.list_agents()}")
