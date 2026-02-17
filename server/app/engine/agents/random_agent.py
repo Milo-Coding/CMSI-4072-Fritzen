@@ -82,6 +82,11 @@ class RandomAgent(BaseAgent):
             if random.random() < 0.6:
                 return "call"
         
+        if "all_in" in available_actions:
+            # Go all-in if we can't call but have chips (1% chance)
+            if random.random() < 0.01:
+                return "all_in"
+        
         if "bet" in available_actions and random.random() < self.bet_probability:
             # Random bet between minimum and half our stack
             min_bet = max(20, game_state.get("big_blind", 20))
@@ -98,10 +103,12 @@ class RandomAgent(BaseAgent):
                 raise_amount = random.randint(min_raise, max_raise)
                 return ("raise", raise_amount)
         
-        # Fallback: check > call > fold
+        # Fallback: check > call > all_in > fold
         if "check" in available_actions:
             return "check"
         elif "call" in available_actions:
             return "call"
+        elif "all_in" in available_actions:
+            return "all_in"
         else:
             return "fold"

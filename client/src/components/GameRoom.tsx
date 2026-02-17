@@ -16,6 +16,7 @@ interface PlayerPublic {
   current_bet_in_round: number;
   has_acted_this_round: boolean;
   is_agent: boolean;
+  is_all_in: boolean;
 }
 
 interface GameState {
@@ -35,6 +36,9 @@ interface GameState {
   call_amount: number;
   is_your_turn: boolean;
   hand_over: boolean;
+  game_over: boolean;
+  winner: { player_id: string; name: string; chips: number } | null;
+  side_pots: { amount: number; eligible_players: string[]; bet_cap: number }[];
 }
 
 interface Room {
@@ -182,6 +186,20 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
     );
   };
 
+  const resetRoom = () => {
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+      setError("Not connected to server");
+      return;
+    }
+
+    ws.current.send(
+      JSON.stringify({
+        type: "reset_room",
+        data: {},
+      }),
+    );
+  };
+
   const handleLeave = () => {
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       ws.current.send(
@@ -257,6 +275,16 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
             <div className="pot-display">
               <span className="pot-label">Pot</span>
               <span className="pot-amount">${gameState.pot || 0}</span>
+              {gameState.side_pots && gameState.side_pots.length > 0 && (
+                <div className="side-pots">
+                  {gameState.side_pots.map((sidePot, idx) => (
+                    <div key={idx} className="side-pot">
+                      Side Pot {idx + 1}: ${sidePot.amount} (cap: $
+                      {sidePot.bet_cap})
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="community-cards">
               {(gameState.community_cards || []).map((card, idx) => (
@@ -300,6 +328,18 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
                 {!player.is_playing_round && (
                   <div className="player-status folded">Folded</div>
                 )}
+                {player.is_all_in && (
+                  <div
+                    className="player-status all-in"
+                    style={{
+                      backgroundColor: "#FF9800",
+                      color: "white",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    ALL-IN
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -322,7 +362,27 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
 
             {/* Action Buttons */}
             <div className="action-area">
-              {gameState.hand_over ? (
+              {gameState.game_over ? (
+                <div style={{ textAlign: "center" }}>
+                  <h2 style={{ color: "#FFD700", marginBottom: "20px" }}>
+                    🏆 {gameState.winner?.name} Wins! 🏆
+                  </h2>
+                  <p style={{ marginBottom: "20px", fontSize: "16px" }}>
+                    Winner takes all {gameState.winner?.chips} chips!
+                  </p>
+                  <button
+                    onClick={resetRoom}
+                    className="action-button reset"
+                    style={{
+                      backgroundColor: "#2196F3",
+                      fontSize: "18px",
+                      padding: "15px 30px",
+                    }}
+                  >
+                    Reset Room & Play Again
+                  </button>
+                </div>
+              ) : gameState.hand_over ? (
                 <button
                   onClick={nextHand}
                   className="action-button next-hand"
@@ -359,6 +419,19 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
                         className="action-button call"
                       >
                         Call ${gameState.call_amount || 0}
+                      </button>
+                    )}
+                    {(gameState.available_actions || []).includes("all_in") && (
+                      <button
+                        onClick={() => sendAction("all_in")}
+                        className="action-button all-in"
+                        style={{
+                          backgroundColor: "#FF9800",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        All-In (
+                        {gameState.players[gameState.your_index]?.chips || 0})
                       </button>
                     )}
                     {(gameState.available_actions || []).includes("bet") && (

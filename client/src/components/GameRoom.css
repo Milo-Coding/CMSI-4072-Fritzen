@@ -113,6 +113,17 @@
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
+.side-pots {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.side-pot {
+  padding: 0.25rem 0;
+  color: #90ee90;
+}
+
 .community-cards {
   display: flex;
   justify-content: center;

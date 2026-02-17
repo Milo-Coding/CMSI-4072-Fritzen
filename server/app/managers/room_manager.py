@@ -256,6 +256,12 @@ class RoomManager:
             big_blind=room.config.big_blind
         )
         
+        # Set dealer to first player with chips
+        for i, player in enumerate(room.players):
+            if player.chips > 0:
+                room.game.dealer_index = i
+                break
+        
         # Register event handler for broadcasting
         for event_type in GameEventType:
             room.game.on_event(event_type, lambda data: room._broadcast_event(data))
@@ -380,6 +386,18 @@ class RoomManager:
         # Add hand_over flag - true if no current player (hand finished)
         state["hand_over"] = room.current_player_index is None and room.is_active
         
+        # Check if game is over (only one player has chips)
+        players_with_chips = [p for p in room.players if p.chips > 0]
+        state["game_over"] = len(players_with_chips) <= 1 and room.is_active
+        if state["game_over"] and len(players_with_chips) == 1:
+            state["winner"] = {
+                "player_id": players_with_chips[0].player_id,
+                "name": players_with_chips[0].name,
+                "chips": players_with_chips[0].chips
+            }
+        else:
+            state["winner"] = None
+        
         return state
     
     def deal_next_hand(self, room_id: str) -> bool:
@@ -396,12 +414,24 @@ class RoomManager:
         if not room or not room.game or not room.is_active:
             return False
         
+        # Check if game is over (only one player has chips)
+        players_with_chips = [p for p in room.players if p.chips > 0]
+        if len(players_with_chips) <= 1:
+            # Game is over, can't deal next hand
+            return False
+        
         # Reset for new hand
         room.game.hand_number += 1
         room.game.current_phase = GamePhase.PRE_FLOP
         
-        # Advance dealer
-        room.game.dealer_index = (room.game.dealer_index + 1) % len(room.players)
+        # Advance dealer to next player with chips
+        original_dealer = room.game.dealer_index
+        next_dealer = room.game._find_next_player_with_chips(room.game.dealer_index)
+        if next_dealer is not None:
+            room.game.dealer_index = next_dealer
+        else:
+            # No player with chips found, should not happen if we checked earlier
+            room.game.dealer_index = (room.game.dealer_index + 1) % len(room.players)
         
         room.game.emit_event(GameEventType.HAND_STARTED, {
             "hand_number": room.game.hand_number,
@@ -422,6 +452,36 @@ class RoomManager:
         
         # Kick off the action sequence
         self._start_action_sequence(room)
+        
+        return True
+    
+    def reset_room(self, room_id: str, starting_chips: int = None) -> bool:
+        """
+        Reset a room - give all players their starting chips back.
+        
+        Args:
+            room_id: Room ID
+            starting_chips: Chips to give each player (uses room config if None)
+            
+        Returns:
+            True if reset successful, False otherwise
+        """
+        room = self.get_room(room_id)
+        if not room:
+            return False
+        
+        # Use room's configured starting chips if not specified
+        chips = starting_chips if starting_chips is not None else room.config.starting_chips
+        
+        # Reset all players' chips and state
+        for player in room.players:
+            player.chips = chips
+            player.reset_for_new_hand()
+        
+        # Reset game state
+        room.is_active = False
+        room.game = None
+        room.current_player_index = None
         
         return True
     
@@ -470,12 +530,24 @@ class RoomManager:
             elif action == "call":
                 contributed = player.do_call(room.game.current_table_bet)
                 room.game.pot += contributed
+                # If player is now out of chips, they're all-in
+                if player.chips == 0 and player.is_playing_round:
+                    action = "all_in"  # Update action name for display
+            elif action == "all_in":
+                contributed = player.do_all_in()
+                room.game.pot += contributed
+                # Update table bet if this all-in raises it
+                if player.current_bet_in_round > room.game.current_table_bet:
+                    room.game.current_table_bet = player.current_bet_in_round
             elif action == "bet":
                 if amount is None:
                     return {"success": False, "error": "Bet requires amount"}
                 contributed = player.do_bet(amount)
                 room.game.current_table_bet = contributed
                 room.game.pot += contributed
+                # If player is now out of chips, they're all-in
+                if player.chips == 0 and player.is_playing_round:
+                    action = "all_in"
             elif action == "raise":
                 if amount is None:
                     return {"success": False, "error": "Raise requires amount"}
@@ -483,6 +555,9 @@ class RoomManager:
                 if new_wager != -1:
                     room.game.current_table_bet = new_wager
                     room.game.pot += added
+                    # If player is now out of chips, they're all-in
+                    if player.chips == 0 and player.is_playing_round:
+                        action = "all_in"
                 else:
                     return {"success": False, "error": "Invalid raise"}
             else:
@@ -500,7 +575,8 @@ class RoomManager:
                 "action": action,
                 "amount": amount,
                 "player_id": player_id,
-                "pot": room.game.pot
+                "pot": room.game.pot,
+                "is_all_in": player.chips == 0 and player.is_playing_round
             }
         except Exception as e:
             return {"success": False, "error": str(e)}    

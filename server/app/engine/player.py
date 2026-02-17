@@ -174,7 +174,8 @@ class Player:
             "hand": [] if hide_cards else [card.to_dict() for card in self.hand],
             "is_playing_round": self.is_playing_round,
             "current_bet_in_round": self.current_bet_in_round,
-            "has_acted_this_round": self.has_acted_this_round
+            "has_acted_this_round": self.has_acted_this_round,
+            "is_all_in": self.chips == 0 and self.is_playing_round
         }
     
     def get_public_info(self) -> dict:

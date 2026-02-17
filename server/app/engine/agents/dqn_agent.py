@@ -239,8 +239,8 @@ class DQNAgent(BaseAgent):
             # Ensure raise is at least min_raise, but not more than max_raise
             raise_amount = max(min_raise, min(max_raise, min_raise + random.randint(0, 40)))
             return ("raise", raise_amount)
-        elif action == "allin":
-            return ("raise", self.chips + self.current_bet_in_round)
+        elif action == "all_in":
+            return "all_in"
         
         return "fold"
     
@@ -265,7 +265,7 @@ class DQNAgent(BaseAgent):
             self.ACTION_CHECK: "check" if "check" in available else "call",
             self.ACTION_CALL: "call" if "call" in available else "check",
             self.ACTION_BET: "bet" if "bet" in available else "raise",
-            self.ACTION_RAISE: "raise"
+            self.ACTION_RAISE: "raise" if "raise" in available else ("all_in" if "all_in" in available else "call")
         }
         
         intended_action = action_mapping.get(action_idx, "fold")
@@ -300,7 +300,8 @@ class DQNAgent(BaseAgent):
             "check": self.ACTION_CHECK,
             "call": self.ACTION_CALL,
             "bet": self.ACTION_BET,
-            "raise": self.ACTION_RAISE
+            "raise": self.ACTION_RAISE,
+            "all_in": self.ACTION_RAISE  # Treat all-in as aggressive raise action
         }
         return mapping.get(action_type, self.ACTION_FOLD)
     

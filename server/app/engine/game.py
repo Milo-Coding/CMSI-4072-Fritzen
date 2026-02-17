@@ -6,6 +6,7 @@ betting rounds, hand evaluation, and event handling.
 
 from enum import Enum
 from typing import List, Dict, Callable, Optional, Tuple, Any
+import random
 from .card import Card
 from .deck import Deck
 from .player import Player
@@ -75,6 +76,7 @@ class Game:
         self.dealer_index = 0
         self.pot = 0
         self.current_table_bet = 0  # highest bet in current betting round
+        self.side_pots: List[Dict[str, Any]] = []  # List of side pots {amount, eligible_players}
         
         self.debug_mode = debug_mode
         self.debug_community: List[Card] = []
@@ -217,6 +219,7 @@ class Game:
         self.community_cards = []
         self.deck.shuffle()
         self.current_table_bet = 0
+        self.side_pots = []
         self.action_history = []
         
         # Notify agents that a new hand is starting
@@ -234,8 +237,21 @@ class Game:
         if len(self.players) < 2:
             return
         
-        sb_index = (self.dealer_index + 1) % len(self.players)
-        bb_index = (self.dealer_index + 2) % len(self.players)
+        # Find players with chips for blinds
+        players_with_chips = [i for i, p in enumerate(self.players) if p.chips > 0]
+        if len(players_with_chips) < 2:
+            return  # Not enough players with chips
+        
+        # Find SB position (next player with chips after dealer)
+        sb_index = self._find_next_player_with_chips(self.dealer_index)
+        if sb_index is None:
+            return
+        
+        # Find BB position (next player with chips after SB)
+        bb_index = self._find_next_player_with_chips(sb_index)
+        if bb_index is None:
+            return
+        
         small_blind_player = self.players[sb_index]
         big_blind_player = self.players[bb_index]
         
@@ -258,6 +274,24 @@ class Game:
             },
             "pot": self.pot
         })
+    
+    def _find_next_player_with_chips(self, start_index: int) -> Optional[int]:
+        """Find the next player after start_index who has chips.
+        
+        Args:
+            start_index: Index to start searching from
+            
+        Returns:
+            Index of next player with chips, or None if none found
+        """
+        next_index = (start_index + 1) % len(self.players)
+        attempts = 0
+        while attempts < len(self.players):
+            if self.players[next_index].chips > 0:
+                return next_index
+            next_index = (next_index + 1) % len(self.players)
+            attempts += 1
+        return None
 
     def _deal_hole_cards(self):
         """Deal hole cards to players."""
@@ -458,20 +492,31 @@ class Game:
         actions = []
         
         actions.append("fold")
+        
+        # Check if player can cover the call amount
         if call_amount == 0:
             actions.append("check")
-        else:
+        elif player.chips >= call_amount:
             actions.append("call")
         
-        # Can only bet/raise if they have chips
+        # Can only bet/raise if they have chips beyond the call
         if player.chips > 0:
             if self.current_table_bet == 0:
+                # Can bet any amount
                 actions.append("bet")
             else:
                 min_raise = self.current_table_bet + self.big_blind
-                max_bet = player.chips + player.current_bet_in_round
-                if max_bet >= min_raise:
+                total_after_call = player.current_bet_in_round + call_amount
+                can_raise = player.current_bet_in_round + player.chips >= min_raise
+                if can_raise:
                     actions.append("raise")
+            
+            # Add all-in if player has chips but can't cover full call or raise
+            if call_amount > 0 and player.chips < call_amount:
+                actions.append("all_in")
+            elif "raise" not in actions and player.chips > 0 and self.current_table_bet > 0:
+                # Can't raise but has chips - can go all-in
+                actions.append("all_in")
         
         return actions
 
@@ -574,13 +619,108 @@ class Game:
             # Raise failed, convert to call
             self._handle_call(player)
 
-    def _showdown(self):
+    def _calculate_side_pots(self):
         """
-        Determine winner(s) and award pot.
+        Calculate main pot and side pots based on all-in players.
         
-        ORIGINAL: Game._showdown() from old code/game.py
-        MODIFIED: Removed Agent-specific training code, added events
+        This is called at the end of each betting round to properly distribute
+        chips into pots that each player is eligible to win.
         """
+        # Get all players and their contributions
+        contributions = [(p, p.current_bet_in_round) for p in self.players]
+        # Sort by contribution amount
+        contributions.sort(key=lambda x: x[1])
+        
+        self.side_pots = []
+        remaining_players = [p for p in self.players if p.is_playing_round]
+        
+        if len(remaining_players) <= 1:
+            return
+        
+        previous_level = 0
+        
+        for player, bet_amount in contributions:
+            if bet_amount <= previous_level or bet_amount == 0:
+                continue
+            
+            # Calculate pot for this level
+            pot_size = 0
+            eligible_players = []
+            
+            for p in self.players:
+                if p.current_bet_in_round >= bet_amount and p.is_playing_round:
+                    eligible_players.append(p.player_id)
+                    # This player contributes (bet_amount - previous_level) to this pot
+                    contribution = min(p.current_bet_in_round, bet_amount) - previous_level
+                    pot_size += contribution
+            
+            if pot_size > 0 and len(eligible_players) > 0:
+                self.side_pots.append({
+                    "amount": pot_size,
+                    "eligible_players": eligible_players,
+                    "cap": bet_amount
+                })
+            
+            previous_level = bet_amount
+    
+    def _award_pots(self):
+        """Award main pot and side pots at showdown."""
+        if not self.side_pots:
+            # No side pots calculated, use simple pot award
+            self._showdown_simple()
+            return
+        
+        # Award each pot from smallest to largest
+        for pot_idx, pot_info in enumerate(self.side_pots):
+            eligible_player_ids = pot_info["eligible_players"]
+            pot_amount = pot_info["amount"]
+            
+            # Get eligible players still in the round
+            eligible = [
+                p for p in self.players
+                if p.player_id in eligible_player_ids and p.is_playing_round
+            ]
+            
+            if len(eligible) == 0:
+                continue
+            elif len(eligible) == 1:
+                # Only one eligible player
+                eligible[0]._add_chips(pot_amount)
+                self.emit_event(GameEventType.POT_AWARDED, {
+                    "pot_type": "side" if pot_idx > 0 else "main",
+                    "pot_index": pot_idx,
+                    "winners": [eligible[0].player_id],
+                    "amount": pot_amount,
+                    "reason": "only_eligible"
+                })
+            else:
+                # Multiple eligible players - evaluate hands
+                ranked = []
+                for p in eligible:
+                    if len(p.hand) == 2 and len(self.community_cards) >= 3:
+                        rank = evaluate_best_five(p.hand + self.community_cards)
+                        ranked.append((rank, p))
+                
+                if ranked:
+                    ranked.sort(key=lambda x: x[0], reverse=True)
+                    best_rank = ranked[0][0]
+                    winners = [p for r, p in ranked if r == best_rank]
+                    
+                    share = pot_amount // len(winners)
+                    for winner in winners:
+                        winner._add_chips(share)
+                    
+                    self.emit_event(GameEventType.POT_AWARDED, {
+                        "pot_type": "side" if pot_idx > 0 else "main",
+                        "pot_index": pot_idx,
+                        "winners": [w.player_id for w in winners],
+                        "amount": share,
+                        "total_pot": pot_amount,
+                        "reason": "showdown"
+                    })
+    
+    def _showdown_simple(self):
+        """Simple showdown without side pots (original logic)."""
         contenders = [p for p in self.players if p.is_playing_round]
         if len(contenders) == 1:
             winner = contenders[0]
@@ -624,6 +764,48 @@ class Game:
             "total_pot": self.pot,
             "reason": "showdown"
         })
+    
+    def _showdown(self):
+        """
+        Determine winner(s) and award pot.
+        
+        ORIGINAL: Game._showdown() from old code/game.py
+        MODIFIED: Added side pot support
+        """
+        # Calculate side pots before awarding
+        self._calculate_side_pots()
+        
+        contenders = [p for p in self.players if p.is_playing_round]
+        if len(contenders) == 1:
+            # Award all pots to the only remaining player
+            winner = contenders[0]
+            winner._add_chips(self.pot)
+            self.emit_event(GameEventType.POT_AWARDED, {
+                "winners": [winner.player_id],
+                "amount_each": self.pot,
+                "reason": "uncontested"
+            })
+            return
+        
+        # Show hands first
+        ranked = []
+        for p in contenders:
+            rank = evaluate_best_five(p.hand + self.community_cards)
+            ranked.append((rank, p))
+            
+        self.emit_event(GameEventType.SHOWDOWN, {
+            "hands": [
+                {
+                    "player_id": p.player_id,
+                    "hand": [c.to_dict() for c in p.hand],
+                    "rank": get_hand_name(r[0])
+                }
+                for r, p in ranked
+            ]
+        })
+        
+        # Award pots (main pot and side pots)
+        self._award_pots()
 
     def _award_pot_if_single(self):
         """Award pot if only one player remains."""
@@ -691,7 +873,8 @@ class Game:
             "big_blind": self.big_blind,
             "community_cards": [c.to_dict() for c in self.community_cards],
             "players": [p.to_dict() for p in self.players],
-            "active_player_count": len(self._get_active_players())
+            "active_player_count": len(self._get_active_players()),
+            "side_pots": self.side_pots
         }
     
     def get_player_view(self, player_id: str) -> dict:
@@ -715,5 +898,6 @@ class Game:
             "big_blind": self.big_blind,
             "community_cards": [c.to_dict() for c in self.community_cards],
             "players": [p.to_dict(hide_cards=(p.player_id != player_id)) for p in self.players],
-            "active_player_count": len(self._get_active_players())
+            "active_player_count": len(self._get_active_players()),
+            "side_pots": self.side_pots
         }

@@ -224,6 +224,20 @@ class ConnectionManager:
         # Broadcast the updated state
         await self.broadcast_game_state(session.current_room)
     
+    async def handle_reset_room(self, websocket: WebSocket, player_id: str):
+        """Handle request to reset the room."""
+        session = self.player_manager.get_session(player_id)
+        if not session or not session.current_room:
+            await self.send_error(websocket, "NOT_IN_ROOM", "Not in a room")
+            return
+        
+        if not self.room_manager.reset_room(session.current_room):
+            await self.send_error(websocket, "RESET_FAILED", "Cannot reset room")
+            return
+        
+        # Broadcast the updated state
+        await self.broadcast_game_state(session.current_room)
+    
     async def send_game_state(self, websocket: WebSocket, room_id: str, player_id: str):
         """Send game state to a specific player."""
         state = self.room_manager.get_game_state(room_id, player_id)
@@ -320,6 +334,9 @@ async def game_websocket(
             elif message_type == WSMessageType.NEXT_HAND.value:
                 await manager.handle_next_hand(websocket, player_id)
             
+            elif message_type == WSMessageType.RESET_ROOM.value:
+                await manager.handle_reset_room(websocket, player_id)
+            
             else:
                 await manager.send_error(
                     websocket, 
@@ -366,6 +383,12 @@ async def game_room_websocket(
             
             elif message_type == WSMessageType.START_GAME.value:
                 await manager.handle_start_game(websocket, player_id)
+            
+            elif message_type == WSMessageType.NEXT_HAND.value:
+                await manager.handle_next_hand(websocket, player_id)
+            
+            elif message_type == WSMessageType.RESET_ROOM.value:
+                await manager.handle_reset_room(websocket, player_id)
             
             elif message_type == WSMessageType.LEAVE_GAME.value:
                 await manager.handle_leave_game(websocket, player_id)

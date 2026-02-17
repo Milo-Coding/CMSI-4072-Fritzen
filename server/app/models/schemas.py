@@ -36,6 +36,7 @@ class PlayerModel(BaseModel):
     has_acted_this_round: bool = False
     is_agent: bool = False
     agent_type: Optional[str] = None
+    is_all_in: bool = False
 
 
 class PlayerPublicModel(BaseModel):
@@ -48,6 +49,7 @@ class PlayerPublicModel(BaseModel):
     current_bet_in_round: int = Field(0, ge=0)
     has_acted_this_round: bool = False
     is_agent: bool = False
+    is_all_in: bool = False
 
 
 # ============================================================
@@ -98,6 +100,7 @@ class ActionType(str, Enum):
     CALL = "call"
     BET = "bet"
     RAISE = "raise"
+    ALL_IN = "all_in"
 
 
 class PlayerAction(BaseModel):
@@ -192,6 +195,7 @@ class WSMessageType(str, Enum):
     PLAYER_ACTION = "player_action"
     START_GAME = "start_game"
     NEXT_HAND = "next_hand"
+    RESET_ROOM = "reset_room"
     CHAT = "chat"
     
     # Server -> Client

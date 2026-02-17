@@ -27,9 +27,9 @@ class GameFlowManager:
         if len(active_players) <= 1:
             return None
         
-        # Check if everyone has acted and matched the current bet
+        # Check if everyone has acted and matched the current bet (or is all-in)
         all_matched = all(
-            p.current_bet_in_round == game.current_table_bet or not p.is_playing_round
+            p.current_bet_in_round == game.current_table_bet or not p.is_playing_round or p.chips == 0
             for p in game.players
         )
         all_acted = all(
@@ -47,6 +47,13 @@ class GameFlowManager:
             if game.players[next_index].is_playing_round:
                 # Check if this player still needs to act
                 player = game.players[next_index]
+                # All-in players don't need to act (even if their bet is less than table bet)
+                if player.chips == 0:
+                    # Skip all-in players
+                    next_index = (next_index + 1) % len(game.players)
+                    attempts += 1
+                    continue
+                # Check if player needs to act
                 if not player.has_acted_this_round or player.current_bet_in_round < game.current_table_bet:
                     return next_index
             next_index = (next_index + 1) % len(game.players)
@@ -62,6 +69,9 @@ class GameFlowManager:
         Returns:
             True if game continues, False if hand is over
         """
+        # Calculate side pots before resetting betting round
+        game._calculate_side_pots()
+        
         # Reset betting round state
         for player in game.players:
             player.reset_for_new_betting_round()
