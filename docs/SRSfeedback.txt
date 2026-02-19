@@ -1,0 +1,85 @@
+
+Documentation Feedback ~ Deliverable #2
+Software Requirements Specification
+Initial Development Schedule
+CMSI 4072 Spring 2026
+=======================================
+
+COMPONENT BREAKDOWN:
+   Strengths:
+      Clear statement of the system’s purpose and architecture (FastAPI,
+         React/Vite, AI agents).
+      Section-by-section roadmap is present
+   Suggestions:
+      Add brief assumptions and constraints (e.g., max table size, auth
+         policy, real-money not supported) to sharpen scope.
+      Add a small glossary (e.g., “room”, “hand”, “showdown”, “stale
+         room”), and a labeled context/sequence diagram for join, deal,
+         bet, showdown flows.
+
+FUNCTIONAL REQUIREMENTS:
+   Strengths:
+      Requirements are atomic and traceable (F-1.x, F-2.x, F-3.x, F-4.x).
+      Rules enforcement and chip/pot updates are explicitly stated.
+      Real-time connection semantics (WebSocket join by room ID) are
+         captured functionally.
+   Suggestions:
+      Add error/edge-case behaviors: reconnect after disconnect, stale
+         room eviction logic, duplicate joins, simultaneous folds/raises, AI
+         model load failure, and invalid bet inputs.
+      Clarify table constraints: max players per room, seat assignment,
+         blinds structure, buy-in/rebuy limits, timeout auto-fold policy.
+      Specify security-relevant functionality: user auth, anti-collusion
+         checks, rate limits, move validation server-side.
+      Add state persistence (resume after server restart, hand history,
+         audit logs) and admin tools (ban/kick, close room).
+
+PERFORMANCE REQUIREMENTS:
+   Strengths:
+      Responsiveness budgets are user-centric (inputs and turn flow).
+      Includes durability/stability over long sessions (100+ hands).
+   Suggestions:
+      Quantify concurrency (e.g., N rooms × M players, target msgs/sec,
+         expected peak concurrent connections).
+      Add server-side latency budgets (p99 round-trip for bet -> table
+         update, p99 broadcast latency across all players).
+      Include degradation policies (if p99 AI >2 s, fallback to simpler
+         policy; if websocket RTT spikes, queue or coalesce events).
+      Add availability/SLOs (e.g., 99.5% weekly uptime) and load test
+         targets with acceptance criteria
+
+ENVIRONMENT REQUIREMENTS:
+   Strengths:
+      Clear tools/frameworks and runtime constraints for both tiers.
+   Suggestions:
+      Pin FastAPI and Node/React versions, and note package manager
+         (npm/pnpm/yarn) and build toolchain versions to improve
+         reproducibility.
+      Specify GPU class (e.g., CUDA capability, VRAM) and a CPU-only
+         fallback path for inference if GPU unavailable.
+      Add database/cache choices (PostgreSQL/Redis, schema, persistence
+         needs) and deployment targets (Docker, K8s, cloud regions).
+      Include browser versions and mobile support policy; list CI/CD
+         and test frameworks
+
+OVERALL ASSESSMENT:
+   Category                          Points
+   Component Breakdown               1.0/1
+   Functional Requirements           3.8/4
+   Performance Requirements          1.8/2
+   Environment Requirements          1.0/1
+                                     =====
+   Subtotal                          7.6/8
+   Preliminary Schedule              2.0/2   [Freebee]
+   ------------------------------------------------------
+   Total Percentage:   9.6/10 = 96% which is an A
+
+
+OVERALL ASSESSMENT:
+You've met most of the desired measurements for this deliverable.  Your SRS
+is very well done but could benefit from at least incorporating a few of
+the suggestions to make it even more complete, like adding assumptions and
+adding numeric currency goals to the performance requirements.
+
+Nice work on this deliverable ~ keep up the good work!
+
