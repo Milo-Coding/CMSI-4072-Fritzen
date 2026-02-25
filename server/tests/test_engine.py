@@ -100,6 +100,8 @@ def test_card_and_deck():
 
 
 def test_hand_evaluation():
+    # TODO add tests for all hand types, not just a few examples
+    # add tests for tie-breaking logic as well
     """Test hand evaluation."""
     from app.engine import evaluate_best_five, get_hand_name
     
@@ -108,9 +110,9 @@ def test_hand_evaluation():
         Card("Hearts", 10),
         Card("Hearts", 11),
         Card("Hearts", 12),
+        Card("Spades", 2),
         Card("Hearts", 13),
         Card("Hearts", 14),
-        Card("Spades", 2),
         Card("Clubs", 3)
     ]
     rank, kickers = evaluate_best_five(cards)
