@@ -100,12 +100,10 @@ def test_card_and_deck():
 
 
 def test_hand_evaluation():
-    # TODO add tests for all hand types, not just a few examples
-    # add tests for tie-breaking logic as well
-    """Test hand evaluation."""
-    from app.engine import evaluate_best_five, get_hand_name
+    """Test hand evaluation with comprehensive WSOP tiebreaking rules."""
+    from app.engine import evaluate_best_five, evaluate_five, get_hand_name, compare_hands
     
-    # Test royal flush / straight flush
+    # Test straight flush
     cards = [
         Card("Hearts", 10),
         Card("Hearts", 11),
@@ -117,38 +115,89 @@ def test_hand_evaluation():
     ]
     rank, kickers = evaluate_best_five(cards)
     hand_name = get_hand_name(rank)
-    assert "Straight Flush" in hand_name or "Royal Flush" in hand_name, f"Expected straight/royal flush, got {hand_name}"
-    assert rank >= 8, "Straight flush should have high rank"
+    assert "Straight Flush" in hand_name, f"Expected straight flush, got {hand_name}"
+    assert rank == 9, "Straight flush should have rank 9"
+    assert kickers[0] == 14, "Royal flush should have Ace high"
     
-    # Test pair
-    cards = [
-        Card("Hearts", 10),
-        Card("Diamonds", 10),
-        Card("Spades", 5),
-        Card("Clubs", 8),
-        Card("Hearts", 2),
-        Card("Spades", 3),
-        Card("Clubs", 4)
-    ]
-    rank, kickers = evaluate_best_five(cards)
-    hand_name = get_hand_name(rank)
-    assert "Pair" in hand_name, f"Expected pair, got {hand_name}"
-    assert rank == 2, "Pair should have rank 2"
+    # Test Four of a Kind tiebreaking
+    hand1 = (Card("Hearts", 10), Card("Diamonds", 10), Card("Spades", 10), Card("Clubs", 10), Card("Hearts", 8))
+    hand2 = (Card("Hearts", 10), Card("Diamonds", 10), Card("Spades", 10), Card("Clubs", 10), Card("Hearts", 7))
+    eval1 = evaluate_five(hand1)
+    eval2 = evaluate_five(hand2)
+    assert compare_hands(eval1, eval2) == 1, "Higher kicker should win in four of a kind"
+    assert eval1[1] == [10, 8], "Four of a kind should have [quad_value, kicker]"
+    assert eval2[1] == [10, 7], "Four of a kind should have [quad_value, kicker]"
     
-    # Test high card
-    cards = [
-        Card("Hearts", 14),
-        Card("Diamonds", 10),
-        Card("Spades", 5),
-        Card("Clubs", 8),
-        Card("Hearts", 2),
-        Card("Spades", 3),
-        Card("Clubs", 6)
-    ]
-    rank, kickers = evaluate_best_five(cards)
-    hand_name = get_hand_name(rank)
-    assert "High Card" in hand_name, f"Expected high card, got {hand_name}"
-    assert rank == 1, "High card should have rank 1"
+    # Test Full House tiebreaking
+    hand1 = (Card("Hearts", 14), Card("Diamonds", 14), Card("Spades", 14), Card("Clubs", 8), Card("Hearts", 8))
+    hand2 = (Card("Hearts", 13), Card("Diamonds", 13), Card("Spades", 13), Card("Clubs", 8), Card("Hearts", 8))
+    eval1 = evaluate_five(hand1)
+    eval2 = evaluate_five(hand2)
+    assert compare_hands(eval1, eval2) == 1, "Higher triplet should win in full house"
+    assert eval1[1] == [14, 8], "Full house should have [triplet, pair]"
+    assert eval2[1] == [13, 8], "Full house should have [triplet, pair]"
+    
+    # Test Two Pair tiebreaking
+    hand1 = (Card("Hearts", 14), Card("Diamonds", 14), Card("Spades", 8), Card("Clubs", 8), Card("Hearts", 7))
+    hand2 = (Card("Hearts", 14), Card("Diamonds", 14), Card("Spades", 8), Card("Clubs", 8), Card("Hearts", 6))
+    eval1 = evaluate_five(hand1)
+    eval2 = evaluate_five(hand2)
+    assert compare_hands(eval1, eval2) == 1, "Higher kicker should win in two pair"
+    assert eval1[1] == [14, 8, 7], "Two pair should have [high_pair, low_pair, kicker]"
+    assert eval2[1] == [14, 8, 6], "Two pair should have [high_pair, low_pair, kicker]"
+    
+    # Test Straight tiebreaking including Ace-low
+    hand1 = (Card("Hearts", 14), Card("Diamonds", 2), Card("Spades", 3), Card("Clubs", 4), Card("Hearts", 5))  # Wheel
+    hand2 = (Card("Hearts", 6), Card("Diamonds", 2), Card("Spades", 3), Card("Clubs", 4), Card("Hearts", 5))   # 6-high
+    eval1 = evaluate_five(hand1)
+    eval2 = evaluate_five(hand2)
+    assert compare_hands(eval1, eval2) == -1, "6-high straight should beat wheel (A-2-3-4-5)"
+    assert eval1[1] == [5], "Wheel should have 5 as high card"
+    assert eval2[1] == [6], "6-high straight should have 6 as high card"
+    
+    # Test Three of a Kind tiebreaking
+    hand1 = (Card("Hearts", 10), Card("Diamonds", 10), Card("Spades", 10), Card("Clubs", 8), Card("Hearts", 7))
+    hand2 = (Card("Hearts", 10), Card("Diamonds", 10), Card("Spades", 10), Card("Clubs", 8), Card("Hearts", 6))
+    eval1 = evaluate_five(hand1)
+    eval2 = evaluate_five(hand2)
+    assert compare_hands(eval1, eval2) == 1, "Higher second kicker should win in three of a kind"
+    assert eval1[1] == [10, 8, 7], "Three of a kind should have [triplet, kicker1, kicker2]"
+    
+    # Test Pair tiebreaking
+    hand1 = (Card("Hearts", 10), Card("Diamonds", 10), Card("Spades", 8), Card("Clubs", 7), Card("Hearts", 6))
+    hand2 = (Card("Hearts", 10), Card("Diamonds", 10), Card("Spades", 8), Card("Clubs", 7), Card("Hearts", 5))
+    eval1 = evaluate_five(hand1)
+    eval2 = evaluate_five(hand2)
+    assert compare_hands(eval1, eval2) == 1, "Higher third kicker should win in pair"
+    assert eval1[1] == [10, 8, 7, 6], "Pair should have [pair_value, kicker1, kicker2, kicker3]"
+    
+    # Test Flush tiebreaking
+    hand1 = (Card("Hearts", 14), Card("Hearts", 10), Card("Hearts", 8), Card("Hearts", 7), Card("Hearts", 6))
+    hand2 = (Card("Spades", 14), Card("Spades", 10), Card("Spades", 8), Card("Spades", 7), Card("Spades", 5))
+    eval1 = evaluate_five(hand1)
+    eval2 = evaluate_five(hand2)
+    assert compare_hands(eval1, eval2) == 1, "Higher fifth card should win in flush"
+    assert eval1[1] == [14, 10, 8, 7, 6], "Flush should have all cards in descending order"
+    
+    # Test High Card tiebreaking
+    hand1 = (Card("Hearts", 14), Card("Diamonds", 10), Card("Spades", 8), Card("Clubs", 7), Card("Hearts", 6))
+    hand2 = (Card("Hearts", 14), Card("Diamonds", 10), Card("Spades", 8), Card("Clubs", 7), Card("Hearts", 5))
+    eval1 = evaluate_five(hand1)
+    eval2 = evaluate_five(hand2)
+    assert compare_hands(eval1, eval2) == 1, "Higher fifth card should win in high card"
+    assert eval1[1] == [14, 10, 8, 7, 6], "High card should have all cards in descending order"
+    
+    # Test basic hand rankings
+    pair_hand = (Card("Hearts", 10), Card("Diamonds", 10), Card("Spades", 5), Card("Clubs", 8), Card("Hearts", 2))
+    high_card_hand = (Card("Hearts", 14), Card("Diamonds", 10), Card("Spades", 5), Card("Clubs", 8), Card("Hearts", 2))
+    
+    pair_eval = evaluate_five(pair_hand)
+    high_eval = evaluate_five(high_card_hand)
+    
+    assert pair_eval[0] == 2, "Pair should have rank 2"
+    assert high_eval[0] == 1, "High card should have rank 1"
+    assert get_hand_name(2) == "Pair"
+    assert get_hand_name(1) == "High Card"
 
 
 if __name__ == "__main__":

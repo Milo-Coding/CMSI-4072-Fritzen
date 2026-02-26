@@ -6,7 +6,7 @@ from app.engine import Player, Game
 from app.engine.agents import BaseAgent
 
 
-class TestAgent(BaseAgent):
+class MockAgent(BaseAgent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
@@ -24,7 +24,7 @@ def test_all_in_no_actions():
     # Create test players
     players = [
         Player(chips=100, name="Player1", player_id="p1"),
-        TestAgent(chips=100, name="Bot", player_id="bot")
+        MockAgent(chips=100, name="Bot", player_id="bot")
     ]
     
     game = Game(players, small_blind=10, big_blind=20)
@@ -54,7 +54,7 @@ def test_folded_no_actions():
     
     players = [
         Player(chips=100, name="Player1", player_id="p1"),
-        TestAgent(chips=100, name="Bot", player_id="bot")
+        MockAgent(chips=100, name="Bot", player_id="bot")
     ]
     
     game = Game(players, small_blind=10, big_blind=20)
