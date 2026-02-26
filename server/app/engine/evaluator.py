@@ -2,6 +2,17 @@
 Hand Evaluator Module - Poker hand evaluation logic
 Provides functions to evaluate poker hands, compare them,
 and convert hand rankings to human-readable formats.
+
+Follows World Series of Poker (WSOP) tiebreaking rules:
+- High Card: Compare all cards in descending order
+- Pair: Compare pair value, then remaining cards in descending order  
+- Two Pair: Compare higher pair, then lower pair, then kicker
+- Three of a Kind: Compare triplet, then remaining cards in descending order
+- Straight: Compare high card (A-2-3-4-5 straight has 5 as high card)
+- Flush: Compare all cards in descending order
+- Full House: Compare triplet value, then pair value
+- Four of a Kind: Compare quad value, then kicker
+- Straight Flush: Compare high card of the straight
 """
 
 from enum import IntEnum
@@ -50,13 +61,13 @@ def evaluate_five(five_cards: Tuple[Card, ...]) -> Tuple[int, List[int]]:
     """
     Evaluate exactly 5 cards and return hand rank with kickers.
     
-    Preserved all original logic including Ace-low straight handling.
+    Updated to follow World Series of Poker tiebreaking rules exactly.
     
     Args:
         five_cards: Exactly 5 cards to evaluate
         
     Returns:
-        tuple: (hand_rank, ordered_values) where ordered_values are kickers
+        tuple: (hand_rank, ordered_values) where ordered_values follow WSOP tiebreak rules
     """
     values = sorted([c.value for c in five_cards], reverse=True)
     suits = [c.suit for c in five_cards]
@@ -66,38 +77,58 @@ def evaluate_five(five_cards: Tuple[Card, ...]) -> Tuple[int, List[int]]:
 
     # Straight detection including Ace-low (A-2-3-4-5)
     is_straight = False
+    straight_high = 0
     if len(unique_vals) == 5:
         if max(unique_vals) - min(unique_vals) == 4:
             is_straight = True
+            straight_high = max(unique_vals)
         elif set(unique_vals) == {14, 2, 3, 4, 5}:
             is_straight = True
-            # For Ace-low straight, treat Ace as 1 for kicker ordering
-            values = [5, 4, 3, 2, 1]
+            straight_high = 5  # Ace-low straight, 5 is the high card
 
-    # Frequency patterns
-    freq_sorted = sorted(((cnt, val) for val, cnt in counts.items()), reverse=True)
-    # Build kicker ordering by frequency then value
-    ordered_vals = []
-    for cnt, val in freq_sorted:
-        ordered_vals.extend([val] * cnt)
-
-    # Hand ranking checks (in order of strength)
+    # Hand ranking checks with WSOP tiebreaking rules
     if is_flush and is_straight:
-        return (HandRank.STRAIGHT_FLUSH, ordered_vals)
+        return (HandRank.STRAIGHT_FLUSH, [straight_high])
+    
     if 4 in counts.values():
-        return (HandRank.FOUR_KIND, ordered_vals)
+        # Four of a Kind: quad value, then kicker
+        quad_val = [v for v, c in counts.items() if c == 4][0]
+        kicker = [v for v, c in counts.items() if c == 1][0]
+        return (HandRank.FOUR_KIND, [quad_val, kicker])
+    
     if sorted(counts.values()) == [2, 3]:
-        return (HandRank.FULL_HOUSE, ordered_vals)
+        # Full House: triplet value, then pair value
+        triplet_val = [v for v, c in counts.items() if c == 3][0]
+        pair_val = [v for v, c in counts.items() if c == 2][0]
+        return (HandRank.FULL_HOUSE, [triplet_val, pair_val])
+    
     if is_flush:
+        # Flush: all cards in descending order
         return (HandRank.FLUSH, values)
+    
     if is_straight:
-        return (HandRank.STRAIGHT, values)
+        # Straight: high card value (5 for ace-low)
+        return (HandRank.STRAIGHT, [straight_high])
+    
     if 3 in counts.values():
-        return (HandRank.THREE_KIND, ordered_vals)
+        # Three of a Kind: triplet value, then kickers in descending order
+        triplet_val = [v for v, c in counts.items() if c == 3][0]
+        kickers = sorted([v for v, c in counts.items() if c == 1], reverse=True)
+        return (HandRank.THREE_KIND, [triplet_val] + kickers)
+    
     if list(counts.values()).count(2) == 2:
-        return (HandRank.TWO_PAIR, ordered_vals)
+        # Two Pair: higher pair, lower pair, then kicker
+        pairs = sorted([v for v, c in counts.items() if c == 2], reverse=True)
+        kicker = [v for v, c in counts.items() if c == 1][0]
+        return (HandRank.TWO_PAIR, [pairs[0], pairs[1], kicker])
+    
     if 2 in counts.values():
-        return (HandRank.PAIR, ordered_vals)
+        # Pair: pair value, then kickers in descending order
+        pair_val = [v for v, c in counts.items() if c == 2][0]
+        kickers = sorted([v for v, c in counts.items() if c == 1], reverse=True)
+        return (HandRank.PAIR, [pair_val] + kickers)
+    
+    # High Card: all cards in descending order
     return (HandRank.HIGH_CARD, values)
 
 
@@ -146,13 +177,28 @@ def get_hand_name(rank: int) -> str:
 
 def hand_to_string(hand_eval: Tuple[int, List[int]]) -> str:
     """
-    Convert hand evaluation to readable string.
+    Convert hand evaluation to readable string with WSOP tiebreaker info.
     
     Args:
         hand_eval: Tuple of (rank, kickers)
         
     Returns:
-        str: Human-readable hand description
+        str: Human-readable hand description with tiebreaker details
     """
     rank, kickers = hand_eval
-    return f"{get_hand_name(rank)} ({', '.join(str(k) for k in kickers[:3])})"
+    hand_name = get_hand_name(rank)
+    
+    if rank == HandRank.STRAIGHT_FLUSH or rank == HandRank.STRAIGHT:
+        return f"{hand_name}, {kickers[0]} high"
+    elif rank == HandRank.FOUR_KIND:
+        return f"{hand_name}, {kickers[0]}s with {kickers[1]} kicker"
+    elif rank == HandRank.FULL_HOUSE:
+        return f"{hand_name}, {kickers[0]}s over {kickers[1]}s"
+    elif rank == HandRank.THREE_KIND:
+        return f"{hand_name}, {kickers[0]}s with {', '.join(str(k) for k in kickers[1:])}"
+    elif rank == HandRank.TWO_PAIR:
+        return f"{hand_name}, {kickers[0]}s and {kickers[1]}s with {kickers[2]} kicker"
+    elif rank == HandRank.PAIR:
+        return f"{hand_name} of {kickers[0]}s with {', '.join(str(k) for k in kickers[1:])}"
+    else:  # HIGH_CARD or FLUSH
+        return f"{hand_name}, {', '.join(str(k) for k in kickers[:3])} high"
