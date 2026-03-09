@@ -7,6 +7,9 @@ Provides endpoints for:
 - Game state queries (for polling-based clients)
 """
 
+import glob
+import os
+from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 
@@ -308,4 +311,25 @@ async def list_agents():
     return {
         "agents": AgentRegistry.list_agents(),
         "default": "random"
+    }
+
+
+@router.get("/models")
+async def list_models():
+    """
+    List available .pth model files for DQN agents.
+    
+    Returns:
+        List of model filenames and their paths
+    """
+    models_dir = Path(__file__).parent.parent.parent / "models"
+    if not models_dir.exists():
+        return {"models": []}
+    
+    pth_files = sorted(models_dir.glob("*.pth"))
+    return {
+        "models": [
+            {"name": f.name, "path": str(f)}
+            for f in pth_files
+        ]
     }

@@ -148,6 +148,7 @@ class RoomConfig(BaseModel):
     starting_chips: int = Field(1000, ge=100)
     ai_players: int = Field(0, ge=0, le=11, description="Number of AI players to add")
     ai_type: str = Field("random", description="Type of AI agent: random, dqn")
+    dqn_model_path: Optional[str] = Field(None, description="Path to .pth model file for DQN agents")
     
     @field_validator('big_blind')
     @classmethod

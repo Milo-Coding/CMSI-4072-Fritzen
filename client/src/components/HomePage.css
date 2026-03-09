@@ -162,6 +162,13 @@
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
+.form-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.45);
+  font-style: italic;
+}
+
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

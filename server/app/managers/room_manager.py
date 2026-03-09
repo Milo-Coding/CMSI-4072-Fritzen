@@ -130,7 +130,8 @@ class RoomManager:
                     config.ai_type,
                     name=f"Bot-{i+1}",
                     chips=config.starting_chips,
-                    player_id=f"ai-{room_id}-{i}"
+                    player_id=f"ai-{room_id}-{i}",
+                    model_load_path=config.dqn_model_path if config.ai_type == "dqn" else None
                 )
                 room.players.append(ai_player)
             except ValueError as e:
@@ -156,7 +157,8 @@ class RoomManager:
                 room.config.ai_type,
                 name=f"Bot-{ai_count + 1}",
                 chips=room.config.starting_chips,
-                player_id=f"ai-{room_id}-{ai_count}"
+                player_id=f"ai-{room_id}-{ai_count}",
+                model_load_path=room.config.dqn_model_path if room.config.ai_type == "dqn" else None
             )
             room.players.append(ai_player)
             return room
@@ -309,7 +311,8 @@ class RoomManager:
                     room.config.ai_type,
                     name=f"Bot-{ai_count + i + 1}",
                     chips=room.config.starting_chips,
-                    player_id=f"ai-{room_id}-fill-{i}"
+                    player_id=f"ai-{room_id}-fill-{i}",
+                    model_load_path=room.config.dqn_model_path if room.config.ai_type == "dqn" else None
                 )
                 room.players.append(ai_player)
             except ValueError as e:

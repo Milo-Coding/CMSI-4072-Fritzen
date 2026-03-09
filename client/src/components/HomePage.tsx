@@ -20,6 +20,7 @@ interface RoomConfig {
   starting_chips: number;
   ai_players: number;
   ai_type: string;
+  dqn_model_path?: string;
 }
 
 const API_BASE = "http://localhost:8000/api";
@@ -42,12 +43,30 @@ function HomePage({ onJoinRoom }: HomePageProps) {
   const [maxPlayers, setMaxPlayers] = useState(6);
   const [startingChips, setStartingChips] = useState(1000);
   const [aiType, setAiType] = useState("random");
+  const [dqnModelPath, setDqnModelPath] = useState("");
+  const [availableModels, setAvailableModels] = useState<
+    { name: string; path: string }[]
+  >([]);
 
   useEffect(() => {
     if (view === "browse") {
       fetchRooms();
     }
   }, [view]);
+
+  useEffect(() => {
+    if (aiType === "dqn" && availableModels.length === 0) {
+      fetch(`${API_BASE}/models`)
+        .then((r) => r.json())
+        .then((data) => {
+          setAvailableModels(data.models || []);
+          if (data.models?.length > 0) {
+            setDqnModelPath(data.models[0].path);
+          }
+        })
+        .catch(() => setAvailableModels([]));
+    }
+  }, [aiType]);
 
   const fetchRooms = async () => {
     setLoading(true);
@@ -82,6 +101,8 @@ function HomePage({ onJoinRoom }: HomePageProps) {
       starting_chips: startingChips,
       ai_players: 0,
       ai_type: aiType,
+      dqn_model_path:
+        aiType === "dqn" && dqnModelPath ? dqnModelPath : undefined,
     };
 
     try {
@@ -208,6 +229,29 @@ function HomePage({ onJoinRoom }: HomePageProps) {
               <option value="dqn">DQN (Trained)</option>
             </select>
           </div>
+
+          {aiType === "dqn" && (
+            <div className="form-group">
+              <label htmlFor="dqn-model">DQN Model</label>
+              {availableModels.length > 0 ? (
+                <select
+                  id="dqn-model"
+                  value={dqnModelPath}
+                  onChange={(e) => setDqnModelPath(e.target.value)}
+                >
+                  {availableModels.map((m) => (
+                    <option key={m.path} value={m.path}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="form-hint">
+                  No .pth files found in server/models/
+                </p>
+              )}
+            </div>
+          )}
 
           <button
             onClick={createRoom}
