@@ -197,6 +197,8 @@ class WSMessageType(str, Enum):
     NEXT_HAND = "next_hand"
     RESET_ROOM = "reset_room"
     CHAT = "chat"
+    ADD_AI = "add_ai"
+    REMOVE_PLAYER = "remove_player"
     
     # Server -> Client
     GAME_STATE = "game_state"

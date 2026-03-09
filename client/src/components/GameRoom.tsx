@@ -65,6 +65,7 @@ interface Room {
   small_blind: number;
   big_blind: number;
   pot: number;
+  players: { player_id: string; name: string; is_agent: boolean }[];
 }
 
 interface GameRoomProps {
@@ -81,6 +82,7 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [betAmount, setBetAmount] = useState(0);
+  const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const ws = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -114,6 +116,7 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
       switch (message.type) {
         case "connected":
           console.log("Player connected:", message.data);
+          setMyPlayerId(message.data.player_id);
           break;
 
         case "game_state":
@@ -214,6 +217,27 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
     );
   };
 
+  const addAI = () => {
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+      setError("Not connected to server");
+      return;
+    }
+    ws.current.send(JSON.stringify({ type: "add_ai", data: {} }));
+  };
+
+  const removePlayer = (targetPlayerId: string) => {
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+      setError("Not connected to server");
+      return;
+    }
+    ws.current.send(
+      JSON.stringify({
+        type: "remove_player",
+        data: { player_id: targetPlayerId },
+      }),
+    );
+  };
+
   const handleLeave = () => {
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       ws.current.send(
@@ -272,13 +296,61 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
 
       {!room?.is_active && (
         <div className="waiting-area">
-          <h3>Waiting for game to start...</h3>
-          <p>Need at least {room?.player_count || 0} players to start</p>
-          {room && room.player_count >= 2 && (
-            <button onClick={startGame} className="primary-button">
-              Start Game
-            </button>
-          )}
+          <h3>Lobby</h3>
+
+          <div className="seat-grid">
+            {(room?.players || []).map((player) => (
+              <div
+                key={player.player_id}
+                className={`seat filled ${
+                  player.is_agent ? "ai-seat" : "human-seat"
+                }`}
+              >
+                <div className="seat-icon">{player.is_agent ? "🤖" : "👤"}</div>
+                <div className="seat-name">{player.name}</div>
+                <div className="seat-type">
+                  {player.is_agent ? "AI" : "Human"}
+                </div>
+                {player.player_id !== myPlayerId && (
+                  <button
+                    className="remove-player-btn"
+                    onClick={() => removePlayer(player.player_id)}
+                    title="Remove player"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            ))}
+
+            {Array.from({
+              length: (room?.max_players || 0) - (room?.players?.length || 0),
+            }).map((_, idx) => (
+              <div key={`empty-${idx}`} className="seat empty">
+                <div className="seat-icon">⬜</div>
+                <div className="seat-name">Empty Seat</div>
+                <div className="seat-type">Waiting...</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="lobby-actions">
+            {(room?.player_count || 0) < (room?.max_players || 0) && (
+              <button onClick={addAI} className="secondary-button">
+                + Add AI Player
+              </button>
+            )}
+            {(room?.player_count || 0) >= 2 && (
+              <button onClick={startGame} className="primary-button">
+                Start Game
+              </button>
+            )}
+          </div>
+
+          <p className="lobby-hint">
+            Empty seats will be automatically filled with AI when the game
+            starts.
+          </p>
         </div>
       )}
 

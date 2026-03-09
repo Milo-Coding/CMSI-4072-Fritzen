@@ -59,15 +59,6 @@
   color: #f0f0f0;
 }
 
-.waiting-area {
-  text-align: center;
-  padding: 4rem;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  margin: 2rem auto;
-  max-width: 600px;
-}
-
 .waiting-area h3 {
   margin-bottom: 1rem;
   color: #f0f0f0;
@@ -535,4 +526,150 @@
 
 .log-entries::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+/* ============================================================
+   Lobby Seat Grid
+   ============================================================ */
+
+.waiting-area {
+  max-width: 800px;
+  margin: 2rem auto;
+  text-align: center;
+}
+
+.seat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.seat {
+  border-radius: 12px;
+  padding: 1rem 0.75rem;
+  text-align: center;
+  position: relative;
+  transition: all 0.2s ease;
+  min-height: 110px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+}
+
+.seat.filled {
+  background: #2d3748;
+  border: 2px solid #4a5568;
+}
+
+.seat.human-seat {
+  border-color: #667eea;
+  background: linear-gradient(135deg, #2d3748 0%, #2a2f45 100%);
+}
+
+.seat.ai-seat {
+  border-color: #48bb78;
+  background: linear-gradient(135deg, #2d3748 0%, #272f2d 100%);
+}
+
+.seat.empty {
+  background: #1a202c;
+  border: 2px dashed #4a5568;
+  opacity: 0.55;
+}
+
+.seat-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.seat-name {
+  font-weight: 600;
+  color: #f7fafc;
+  font-size: 0.85rem;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seat-type {
+  font-size: 0.7rem;
+  color: #a0aec0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.remove-player-btn {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  background: #e53e3e;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  font-size: 0.65rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition:
+    background 0.2s ease,
+    transform 0.1s ease;
+  padding: 0;
+}
+
+.remove-player-btn:hover {
+  background: #c53030;
+  transform: scale(1.15);
+}
+
+/* Lobby action buttons row */
+.lobby-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 1.5rem 0 0.75rem;
+}
+
+.lobby-hint {
+  color: #718096;
+  font-size: 0.82rem;
+  margin-top: 0.5rem;
+  font-style: italic;
+}
+
+/* Secondary button (used in lobby & loading) */
+.secondary-button {
+  background: #2d3748;
+  color: #e2e8f0;
+  border: 1px solid #4a5568;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: #4a5568;
+  transform: translateY(-1px);
+}
+
+.secondary-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* primary-button inside lobby-actions should not be full-width */
+.lobby-actions .primary-button {
+  width: auto;
+  margin-top: 0;
 }

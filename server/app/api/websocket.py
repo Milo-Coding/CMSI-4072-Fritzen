@@ -237,6 +237,39 @@ class ConnectionManager:
         
         # Broadcast the updated state
         await self.broadcast_game_state(session.current_room)
+
+    async def handle_add_ai(self, websocket: WebSocket, player_id: str):
+        """Handle request to add an AI player to the lobby."""
+        session = self.player_manager.get_session(player_id)
+        if not session or not session.current_room:
+            await self.send_error(websocket, "NOT_IN_ROOM", "Not in a room")
+            return
+
+        room = self.room_manager.add_ai_player(session.current_room)
+        if not room:
+            await self.send_error(websocket, "ADD_AI_FAILED", "Cannot add AI player (room may be full or game already started)")
+            return
+
+        await self.broadcast_game_state(session.current_room)
+
+    async def handle_remove_player(self, websocket: WebSocket, player_id: str, data: dict):
+        """Handle request to remove a player (human or AI) from the lobby."""
+        session = self.player_manager.get_session(player_id)
+        if not session or not session.current_room:
+            await self.send_error(websocket, "NOT_IN_ROOM", "Not in a room")
+            return
+
+        target_id = data.get("player_id")
+        if not target_id:
+            await self.send_error(websocket, "INVALID_REQUEST", "player_id is required")
+            return
+
+        room = self.room_manager.remove_player_from_lobby(session.current_room, target_id)
+        if not room:
+            await self.send_error(websocket, "REMOVE_FAILED", "Cannot remove player (game may already be started)")
+            return
+
+        await self.broadcast_game_state(session.current_room)
     
     async def send_game_state(self, websocket: WebSocket, room_id: str, player_id: str):
         """Send game state to a specific player."""
@@ -336,6 +369,12 @@ async def game_websocket(
             
             elif message_type == WSMessageType.RESET_ROOM.value:
                 await manager.handle_reset_room(websocket, player_id)
+
+            elif message_type == WSMessageType.ADD_AI.value:
+                await manager.handle_add_ai(websocket, player_id)
+
+            elif message_type == WSMessageType.REMOVE_PLAYER.value:
+                await manager.handle_remove_player(websocket, player_id, message_data)
             
             else:
                 await manager.send_error(
@@ -389,6 +428,12 @@ async def game_room_websocket(
             
             elif message_type == WSMessageType.RESET_ROOM.value:
                 await manager.handle_reset_room(websocket, player_id)
+
+            elif message_type == WSMessageType.ADD_AI.value:
+                await manager.handle_add_ai(websocket, player_id)
+
+            elif message_type == WSMessageType.REMOVE_PLAYER.value:
+                await manager.handle_remove_player(websocket, player_id, message_data)
             
             elif message_type == WSMessageType.LEAVE_GAME.value:
                 await manager.handle_leave_game(websocket, player_id)

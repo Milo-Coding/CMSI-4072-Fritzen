@@ -41,7 +41,6 @@ function HomePage({ onJoinRoom }: HomePageProps) {
   const [bigBlind, setBigBlind] = useState(20);
   const [maxPlayers, setMaxPlayers] = useState(6);
   const [startingChips, setStartingChips] = useState(1000);
-  const [aiPlayers, setAiPlayers] = useState(0);
   const [aiType, setAiType] = useState("random");
 
   useEffect(() => {
@@ -81,7 +80,7 @@ function HomePage({ onJoinRoom }: HomePageProps) {
       min_players: 2,
       max_players: maxPlayers,
       starting_chips: startingChips,
-      ai_players: aiPlayers,
+      ai_players: 0,
       ai_type: aiType,
     };
 
@@ -198,30 +197,16 @@ function HomePage({ onJoinRoom }: HomePageProps) {
             </div>
           </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label htmlFor="ai-players">AI Players</label>
-              <input
-                id="ai-players"
-                type="number"
-                value={aiPlayers}
-                onChange={(e) => setAiPlayers(Number(e.target.value))}
-                min="0"
-                max="11"
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="ai-type">AI Type</label>
-              <select
-                id="ai-type"
-                value={aiType}
-                onChange={(e) => setAiType(e.target.value)}
-              >
-                <option value="random">Random</option>
-                <option value="dqn">DQN (Trained)</option>
-              </select>
-            </div>
+          <div className="form-group">
+            <label htmlFor="ai-type">AI Type (used to fill empty seats)</label>
+            <select
+              id="ai-type"
+              value={aiType}
+              onChange={(e) => setAiType(e.target.value)}
+            >
+              <option value="random">Random</option>
+              <option value="dqn">DQN (Trained)</option>
+            </select>
           </div>
 
           <button
@@ -229,7 +214,7 @@ function HomePage({ onJoinRoom }: HomePageProps) {
             disabled={loading}
             className="primary-button"
           >
-            {loading ? "Creating..." : "Create Room"}
+            {loading ? "Creating..." : "Create Room & Enter Lobby"}
           </button>
         </div>
       </div>

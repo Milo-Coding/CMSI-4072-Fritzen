@@ -64,7 +64,15 @@ class Room:
             "phase": self.phase,
             "small_blind": self.config.small_blind,
             "big_blind": self.config.big_blind or self.config.small_blind * 2,
-            "pot": self.game.pot if self.game else 0
+            "pot": self.game.pot if self.game else 0,
+            "players": [
+                {
+                    "player_id": p.player_id,
+                    "name": p.name,
+                    "is_agent": isinstance(p, BaseAgent)
+                }
+                for p in self.players
+            ]
         }
     
     def add_event_callback(self, callback: Callable[[str, dict], None]):
@@ -131,6 +139,49 @@ class RoomManager:
         self._rooms[room_id] = room
         return room
     
+    def add_ai_player(self, room_id: str) -> Optional[Room]:
+        """
+        Add a single AI player to a room (pre-game only).
+
+        Returns:
+            The room if successful, None otherwise
+        """
+        room = self.get_room(room_id)
+        if not room or room.is_active or room.is_full:
+            return None
+
+        ai_count = sum(1 for p in room.players if isinstance(p, BaseAgent))
+        try:
+            ai_player = AgentRegistry.create(
+                room.config.ai_type,
+                name=f"Bot-{ai_count + 1}",
+                chips=room.config.starting_chips,
+                player_id=f"ai-{room_id}-{ai_count}"
+            )
+            room.players.append(ai_player)
+            return room
+        except ValueError as e:
+            print(f"Warning: Could not create AI player: {e}")
+            return None
+
+    def remove_player_from_lobby(self, room_id: str, target_player_id: str) -> Optional[Room]:
+        """
+        Remove a player (human or AI) from the lobby before the game starts.
+
+        Returns:
+            The room if successful, None otherwise
+        """
+        room = self.get_room(room_id)
+        if not room or room.is_active:
+            return None
+
+        # Clean up human player session mapping if applicable
+        if target_player_id in self._player_rooms:
+            del self._player_rooms[target_player_id]
+
+        room.players = [p for p in room.players if p.player_id != target_player_id]
+        return room
+
     def get_room(self, room_id: str) -> Optional[Room]:
         """Get a room by ID."""
         return self._rooms.get(room_id)
@@ -248,7 +299,22 @@ class RoomManager:
         
         if not room.can_start:
             return False
-        
+
+        # Auto-fill remaining empty seats with AI players
+        empty_seats = room.config.max_players - room.player_count
+        ai_count = sum(1 for p in room.players if isinstance(p, BaseAgent))
+        for i in range(empty_seats):
+            try:
+                ai_player = AgentRegistry.create(
+                    room.config.ai_type,
+                    name=f"Bot-{ai_count + i + 1}",
+                    chips=room.config.starting_chips,
+                    player_id=f"ai-{room_id}-fill-{i}"
+                )
+                room.players.append(ai_player)
+            except ValueError as e:
+                print(f"Warning: Could not auto-fill AI player: {e}")
+
         # Create game instance
         room.game = Game(
             players=room.players,
