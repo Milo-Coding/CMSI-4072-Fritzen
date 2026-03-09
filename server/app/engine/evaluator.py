@@ -60,9 +60,7 @@ def evaluate_best_five(cards: List[Card]) -> Tuple[int, List[int]]:
 def evaluate_five(five_cards: Tuple[Card, ...]) -> Tuple[int, List[int]]:
     """
     Evaluate exactly 5 cards and return hand rank with kickers.
-    
-    Updated to follow World Series of Poker tiebreaking rules exactly.
-    
+        
     Args:
         five_cards: Exactly 5 cards to evaluate
         
