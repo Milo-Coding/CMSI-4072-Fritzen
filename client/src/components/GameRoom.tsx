@@ -364,12 +364,19 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
                 <span className="pot-amount">${gameState.pot || 0}</span>
                 {gameState.side_pots && gameState.side_pots.length > 0 && (
                   <div className="side-pots">
-                    {gameState.side_pots.map((sidePot, idx) => (
-                      <div key={idx} className="side-pot">
-                        Side Pot {idx + 1}: ${sidePot.amount} (cap: $
-                        {sidePot.bet_cap})
-                      </div>
-                    ))}
+                    {gameState.side_pots.map((sidePot, idx) => {
+                      const eligibleNames = sidePot.eligible_players.map(
+                        (pid) =>
+                          gameState.players.find((p) => p.player_id === pid)
+                            ?.name ?? pid,
+                      );
+                      return (
+                        <div key={idx} className="side-pot">
+                          Side Pot {idx + 1}: ${sidePot.amount} —{" "}
+                          {eligibleNames.join(", ")}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

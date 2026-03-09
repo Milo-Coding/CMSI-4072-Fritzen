@@ -175,8 +175,16 @@ class GameFlowManager:
     def get_starting_player_index(game: Game) -> int:
         """Get the index of first player to act in current phase."""
         if game.current_phase == GamePhase.PRE_FLOP:
-            # After blinds, first to act is left of big blind
-            return (game.dealer_index + 3) % len(game.players)
+            # After blinds, first to act is left of big blind (UTG)
+            start = (game.dealer_index + 3) % len(game.players)
+            # Skip players who have no chips / are not in this hand
+            index = start
+            for _ in range(len(game.players)):
+                p = game.players[index]
+                if p.is_playing_round and p.chips > 0:
+                    return index
+                index = (index + 1) % len(game.players)
+            return start  # fallback (no active players)
         else:
             # Post-flop, first to act is left of dealer
             index = (game.dealer_index + 1) % len(game.players)

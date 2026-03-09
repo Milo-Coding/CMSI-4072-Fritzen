@@ -702,6 +702,18 @@ class Game:
             total_side_pot_amount = sum(pot["amount"] for pot in self.side_pots)
             if abs(total_side_pot_amount - self.pot) > 0.01:  # Small tolerance for floating point
                 raise ValueError(f"Side pot calculation error: side pots total ${total_side_pot_amount}, main pot ${self.pot}")
+
+        # Merge pots that have the same set of eligible players
+        if len(self.side_pots) > 1:
+            merged = [self.side_pots[0]]
+            for pot in self.side_pots[1:]:
+                last = merged[-1]
+                if set(pot["eligible_players"]) == set(last["eligible_players"]):
+                    last["amount"] += pot["amount"]
+                    last["cap"] = pot["cap"]  # keep the higher cap
+                else:
+                    merged.append(pot)
+            self.side_pots = merged
     
     def _award_pots(self):
         """Award main pot and side pots at showdown."""
