@@ -250,15 +250,15 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
     onLeave();
   };
 
-  const getSuitSymbol = (suit: string): string => {
-    const symbols: { [key: string]: string } = {
-      Hearts: "♥",
-      Diamonds: "♦",
-      Clubs: "♣",
-      Spades: "♠",
-    };
-    return symbols[suit] || suit;
-  };
+  // const getSuitSymbol = (suit: string): string => {
+  //   const symbols: { [key: string]: string } = {
+  //     Hearts: "♥",
+  //     Diamonds: "♦",
+  //     Clubs: "♣",
+  //     Spades: "♠",
+  //   };
+  //   return symbols[suit] || suit;
+  // };
 
   const getSuitColor = (suit: string): string => {
     return suit === "Hearts" || suit === "Diamonds" ? "red" : "black";
