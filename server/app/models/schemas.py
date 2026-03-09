@@ -6,7 +6,7 @@ Defines all request/response models and WebSocket message formats.
 
 from enum import Enum
 from typing import List, Optional, Dict, Any, Union
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict, ValidationInfo
 
 
 # ============================================================
@@ -19,10 +19,9 @@ class CardModel(BaseModel):
     value: int = Field(..., ge=2, le=14, description="Card value 2-14 (11=J, 12=Q, 13=K, 14=A)")
     display: Optional[str] = Field(None, description="Human-readable display (e.g., 'K♥')")
     
-    class Config:
-        json_schema_extra = {
-            "example": {"suit": "Hearts", "value": 14, "display": "A♥"}
-        }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {"suit": "Hearts", "value": 14, "display": "A♥"}
+    })
 
 
 class PlayerModel(BaseModel):
@@ -108,21 +107,21 @@ class PlayerAction(BaseModel):
     action: ActionType
     amount: Optional[int] = Field(None, ge=0, description="Required for bet/raise actions")
     
-    @validator('amount')
-    def validate_amount(cls, v, values):
-        action = values.get('action')
+    @field_validator('amount')
+    @classmethod
+    def validate_amount(cls, v: Optional[int], info: ValidationInfo) -> Optional[int]:
+        action = info.data.get('action')
         if action in [ActionType.BET, ActionType.RAISE] and v is None:
             raise ValueError(f'{action.value} action requires an amount')
         return v
-    
-    class Config:
-        json_schema_extra = {
-            "examples": [
-                {"action": "fold"},
-                {"action": "call"},
-                {"action": "bet", "amount": 50}
-            ]
-        }
+
+    model_config = ConfigDict(json_schema_extra={
+        "examples": [
+            {"action": "fold"},
+            {"action": "call"},
+            {"action": "bet", "amount": 50}
+        ]
+    })
 
 
 class PlayerActionResult(BaseModel):
@@ -150,15 +149,17 @@ class RoomConfig(BaseModel):
     ai_players: int = Field(0, ge=0, le=11, description="Number of AI players to add")
     ai_type: str = Field("random", description="Type of AI agent: random, dqn")
     
-    @validator('big_blind')
-    def set_big_blind(cls, v, values):
+    @field_validator('big_blind')
+    @classmethod
+    def set_big_blind(cls, v: Optional[int], info: ValidationInfo) -> int:
         if v is None:
-            return values.get('small_blind', 10) * 2
+            return info.data.get('small_blind', 10) * 2
         return v
-    
-    @validator('max_players')
-    def validate_max_players(cls, v, values):
-        min_players = values.get('min_players', 2)
+
+    @field_validator('max_players')
+    @classmethod
+    def validate_max_players(cls, v: int, info: ValidationInfo) -> int:
+        min_players = info.data.get('min_players', 2)
         if v < min_players:
             raise ValueError('max_players must be >= min_players')
         return v

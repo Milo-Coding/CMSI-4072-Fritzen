@@ -713,7 +713,11 @@ class RoomManager:
                     # Stop on error to avoid infinite loop
                     break
             else:
-                # It's a human player's turn - stop and wait for their action
+                # It's a human player's turn - but only stop if they can actually act
+                if not next_player.is_playing_round or next_player.chips == 0:
+                    # Bankrupt / not in this hand – skip them
+                    next_player.has_acted_this_round = True
+                    continue
                 break
         
         # If we exited the loop with current_player_index = None, hand is over

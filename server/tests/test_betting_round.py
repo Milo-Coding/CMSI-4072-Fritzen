@@ -7,6 +7,11 @@ respond to raises before the round ends.
 
 import pytest
 from app.engine import Card, Player, Game, GameEventType
+from app.engine.game import GamePhase
+from app.managers.game_flow import GameFlowManager
+from app.managers.room_manager import RoomManager
+from app.models.schemas import RoomConfig
+from app.engine.agents import AgentRegistry
 
 
 class MockPlayer(Player):
@@ -172,6 +177,183 @@ class TestPreFlopBBOption:
         
         # BB should have at least one action
         assert len(bb_actions) >= 1, "BB should get to act at least once"
+
+
+class TestBankruptPlayerStartingPosition:
+    """
+    Tests for the bug where a bankrupt (0-chip) player was returned as the
+    starting player for a new hand, freezing the game when that player was human.
+    """
+
+    def _make_game(self, chips_list):
+        """Helper: create a Game with players having the given chip counts."""
+        players = [
+            Player(chips=c, name=f"P{i+1}", player_id=f"p{i+1}")
+            for i, c in enumerate(chips_list)
+        ]
+        # dealer is index 0, SB=1, BB=2, UTG=3
+        game = Game(players=players, small_blind=10, big_blind=20)
+        game._prepare_new_hand()
+        game.current_phase = GamePhase.PRE_FLOP
+        game.dealer_index = 0
+        return game, players
+
+    def test_starting_player_skips_bankrupt_utg(self):
+        """
+        When the natural UTG seat is held by a bankrupt player,
+        get_starting_player_index must return the next active player instead.
+
+        Layout (dealer=0): SB=1, BB=2, UTG=3 (bankrupt), UTG+1=4 (active)
+        Expected starting index: 4
+        """
+        game, players = self._make_game([1000, 1000, 1000, 0, 1000])
+        # UTG is index 3 (dealer+3 % 5 == 3), who has 0 chips
+        # The next active player is index 4
+        players[3].is_playing_round = False  # bankrupt player is out
+
+        start = GameFlowManager.get_starting_player_index(game)
+
+        assert start != 3, "Should not start on the bankrupt player at UTG"
+        assert players[start].chips > 0, "Starting player must have chips"
+        assert players[start].is_playing_round, "Starting player must be in the round"
+
+    def test_starting_player_skips_multiple_bankrupt(self):
+        """
+        Multiple consecutive bankrupt players at UTG positions are all skipped.
+
+        Layout (dealer=0): SB=1, BB=2, UTG=3 (bankrupt), UTG+1=4 (bankrupt),
+        UTG+2=5 (active)
+        Expected starting index: 5
+        """
+        game, players = self._make_game([1000, 1000, 1000, 0, 0, 1000])
+        players[3].is_playing_round = False
+        players[4].is_playing_round = False
+
+        start = GameFlowManager.get_starting_player_index(game)
+
+        assert start == 5, f"Expected start=5, got {start}"
+        assert players[start].chips > 0
+
+    def test_starting_player_valid_when_all_have_chips(self):
+        """Sanity check: normal case returns dealer+3 without changes."""
+        game, players = self._make_game([1000, 1000, 1000, 1000, 1000])
+
+        start = GameFlowManager.get_starting_player_index(game)
+
+        assert start == 3  # (0 + 3) % 5
+        assert players[start].chips > 0
+
+
+class TestBankruptHumanDoesNotFreezeGame:
+    """
+    Tests for the bug where _progress_game_after_action stopped to wait for
+    a bankrupt human player, freezing the game indefinitely.
+
+    This uses RoomManager with a mixture of a human player (0 chips) and AI
+    players so the full action-progression path is exercised.
+    """
+
+    def _make_room_with_broke_human(self):
+        """
+        Create a room where:
+          - 1 human player with 0 chips (bust)
+          - 4 AI players that each have chips
+        The human is registered as a non-agent Player so the room manager
+        would previously pause to wait for their action.
+        max_players is set to exactly 5 to prevent start_game from auto-filling
+        extra seats (which would change the expected chip total).
+        """
+        manager = RoomManager()
+        config = RoomConfig(
+            name="test-room",
+            max_players=5,
+            min_players=2,
+            small_blind=10,
+            big_blind=20,
+            starting_chips=200,
+            ai_players=0,
+            ai_type="random",
+        )
+        room = manager.create_room(config)
+
+        # Add a broke human player
+        human = Player(chips=0, name="BrokeHuman", player_id="human-broke")
+        room.players.append(human)
+        manager._player_rooms["human-broke"] = room.id
+
+        # Add 4 AI players with chips (fills the room to max_players=5)
+        for i in range(4):
+            ai = AgentRegistry.create(
+                "random",
+                name=f"Bot-{i+1}",
+                chips=200,
+                player_id=f"ai-test-{i}",
+            )
+            room.players.append(ai)
+
+        return manager, room
+
+    def test_game_starts_without_freezing(self):
+        """
+        start_game must complete (not freeze) even when the human at the
+        starting position has 0 chips.
+        """
+        manager, room = self._make_room_with_broke_human()
+
+        # This must return True and not block forever
+        result = manager.start_game(room.id)
+
+        assert result is True, "start_game should succeed"
+        # The room should either be waiting for a real player or have finished the hand
+        updated_room = manager.get_room(room.id)
+        # Game should have progressed past the bankrupt human
+        if updated_room and updated_room.current_player_index is not None:
+            acting_player = updated_room.players[updated_room.current_player_index]
+            assert acting_player.chips > 0, (
+                "The player waiting for action must have chips; "
+                "a bankrupt player should never be left as current_player"
+            )
+
+    def test_hand_completes_chips_conserved(self):
+        """
+        After the hand involving a bankrupt human runs to completion, total
+        chips in play must equal the chips held by active players before the hand.
+        """
+        manager, room = self._make_room_with_broke_human()
+        manager.start_game(room.id)
+
+        updated_room = manager.get_room(room.id)
+        if updated_room is None:
+            return  # room cleaned up (all-AI room with no human)
+
+        total_chips = sum(p.chips for p in updated_room.players)
+        # Total chips across all active AI players before the hand was 4 * 200 = 800
+        # The human started with 0, so total should still be 800
+        assert total_chips == 800, (
+            f"Chips not conserved after hand with bankrupt human: {total_chips} != 800"
+        )
+
+    def test_next_hand_skips_bankrupt_human(self):
+        """
+        deal_next_hand must also complete without freezing when the bankrupt
+        human would be in the UTG seat for the second hand.
+        """
+        manager, room = self._make_room_with_broke_human()
+        manager.start_game(room.id)
+
+        # Now trigger a second hand
+        result = manager.deal_next_hand(room.id)
+
+        # deal_next_hand returns False only if game-over or room missing;
+        # with 4 active AI players it should continue
+        assert result is True, "deal_next_hand should succeed with active AI players"
+
+        updated_room = manager.get_room(room.id)
+        if updated_room and updated_room.current_player_index is not None:
+            acting_player = updated_room.players[updated_room.current_player_index]
+            assert acting_player.chips > 0, (
+                "Second hand: player awaiting action must have chips"
+            )
 
 
 if __name__ == "__main__":
