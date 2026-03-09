@@ -40,10 +40,10 @@ interface GameState {
   winner: { player_id: string; name: string; chips: number } | null;
   side_pots: { amount: number; eligible_players: string[]; bet_cap: number }[];
   action_log: {
-    player_id: string;
-    player_name: string;
+    player_id: string | null;
+    player_name: string | null;
     action: string;
-    amount?: number;
+    amount?: number | null;
     timestamp: number;
   }[];
   showdown_hands: {
@@ -440,15 +440,21 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
                 {(gameState.action_log || [])
                   .slice()
                   .reverse()
-                  .map((entry, idx) => (
-                    <div key={idx} className="log-entry">
-                      <span className="log-player">{entry.player_name}</span>
-                      <span className="log-action">{entry.action}</span>
-                      {entry.amount !== undefined && (
-                        <span className="log-amount">${entry.amount}</span>
-                      )}
-                    </div>
-                  ))}
+                  .map((entry, idx) =>
+                    entry.player_name === null ? (
+                      <div key={idx} className="log-phase-divider">
+                        {entry.action}
+                      </div>
+                    ) : (
+                      <div key={idx} className="log-entry">
+                        <span className="log-player">{entry.player_name}</span>
+                        <span className="log-action">{entry.action}</span>
+                        {entry.amount != null && (
+                          <span className="log-amount">${entry.amount}</span>
+                        )}
+                      </div>
+                    ),
+                  )}
                 {(!gameState.action_log ||
                   gameState.action_log.length === 0) && (
                   <div className="log-empty">No actions yet</div>

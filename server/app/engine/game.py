@@ -268,7 +268,22 @@ class Game:
         big_blind_player.total_bet_in_hand = bb_paid
         self.current_table_bet = bb_paid
         self.pot += sb_paid + bb_paid
-        
+
+        self.action_log.append({
+            "player_id": small_blind_player.player_id,
+            "player_name": small_blind_player.name,
+            "action": "small blind",
+            "amount": sb_paid,
+            "timestamp": self.hand_number
+        })
+        self.action_log.append({
+            "player_id": big_blind_player.player_id,
+            "player_name": big_blind_player.name,
+            "action": "big blind",
+            "amount": bb_paid,
+            "timestamp": self.hand_number
+        })
+
         self.emit_event(GameEventType.BLINDS_POSTED, {
             "small_blind": {
                 "player_id": small_blind_player.player_id,
@@ -314,6 +329,16 @@ class Game:
         else:
             for _ in range(n):
                 self.community_cards.append(self.deck.deal_card())
+
+        # Log the phase transition to the action log
+        phase_label = self.current_phase.value.replace("_", " ").title()
+        self.action_log.append({
+            "player_id": None,
+            "player_name": None,
+            "action": f"--- {phase_label} ---",
+            "amount": None,
+            "timestamp": self.hand_number
+        })
 
     def set_cards(self, community_cards: List[Card], *hands: List[List[Card]]):
         """

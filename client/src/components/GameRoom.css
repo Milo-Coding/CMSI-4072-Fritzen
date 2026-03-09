@@ -502,6 +502,19 @@
   font-weight: bold;
 }
 
+.log-phase-divider {
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  color: #ffd700;
+  padding: 0.3rem 0.5rem;
+  border-top: 1px solid rgba(255, 215, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 215, 0, 0.3);
+  background: rgba(255, 215, 0, 0.07);
+  border-radius: 4px;
+}
+
 .log-empty {
   color: rgba(255, 255, 255, 0.5);
   text-align: center;
