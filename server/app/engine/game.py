@@ -439,13 +439,14 @@ class Game:
                     break
 
             decision = self._get_player_decision(player, state_name)
+            previous_table_bet = self.current_table_bet
             self._execute_player_decision(player, decision)
 
             if self._hand_over():
                 return
 
-            # If there was a bet or raise, update the aggressor
-            if isinstance(decision, tuple) and decision[0] in ("bet", "raise"):
+            # If table bet increased (bet / raise / all-in raise), update aggressor
+            if self.current_table_bet > previous_table_bet:
                 last_aggressor_index = action_index
                 # Reset has_acted for players who now need to respond to the raise
                 for p in self.players:
@@ -594,12 +595,20 @@ class Game:
             self._handle_check(player)
         elif decision == "call":
             self._handle_call(player)
+        elif decision == "all_in":
+            self._handle_all_in(player)
         elif isinstance(decision, tuple):
             action_type, amount = decision
             if action_type == "bet":
                 self._handle_bet(player, amount)
             elif action_type == "raise":
                 self._handle_raise(player, amount)
+            else:
+                # Unknown tuple action, fail safe to legal passive action
+                self._handle_check(player)
+        else:
+            # Unknown action token, fail safe to legal passive action
+            self._handle_check(player)
 
     def _handle_fold(self, player: Player):
         """Handle fold action."""
@@ -658,6 +667,23 @@ class Game:
         else:
             # Raise failed, convert to call
             self._handle_call(player)
+
+    def _handle_all_in(self, player: Player):
+        """Handle all-in action, including all-in raises."""
+        contributed = player.do_all_in()
+        self.pot += contributed
+
+        # If all-in exceeds current table bet, it effectively acts as a raise
+        if player.current_bet_in_round > self.current_table_bet:
+            self.current_table_bet = player.current_bet_in_round
+
+        self.emit_event(GameEventType.PLAYER_ACTION_TAKEN, {
+            "player_id": player.player_id,
+            "action": "all_in",
+            "amount": contributed,
+            "current_bet": self.current_table_bet,
+            "pot": self.pot
+        })
 
     def _calculate_side_pots(self):
         """
