@@ -388,7 +388,15 @@ class Game:
         bb_had_option = False
         bb_index = (self.dealer_index + 2) % len(self.players)
 
+        # Safety guard to prevent pathological infinite loops
+        action_count = 0
+        max_actions = max(50, len(self.players) * 200)
+
         while True:
+            # Hard stop for safety in case round state becomes inconsistent
+            if action_count >= max_actions:
+                break
+
             # Find the next active player (skip folded AND all-in players)
             attempts = 0
             while (self.players[action_index] not in self._get_active_players() or
@@ -441,6 +449,7 @@ class Game:
             decision = self._get_player_decision(player, state_name)
             previous_table_bet = self.current_table_bet
             self._execute_player_decision(player, decision)
+            action_count += 1
 
             if self._hand_over():
                 return
@@ -459,6 +468,29 @@ class Game:
                 action_index == bb_index and 
                 decision == "check"):
                 break
+
+            # Robust completion check: if every player still in the hand either
+            # (a) matched the table bet and acted, or (b) is all-in, the round is done.
+            # This covers cases where the last aggressor is all-in and gets skipped.
+            round_settled = all(
+                (not p.is_playing_round) or
+                (p.chips == 0) or
+                (p.current_bet_in_round == self.current_table_bet and p.has_acted_this_round)
+                for p in self.players
+            )
+
+            if round_settled:
+                # Preserve pre-flop BB option when there was no raise beyond BB.
+                bb_player = self.players[bb_index]
+                bb_option_pending = (
+                    state_name == "Pre-Flop" and
+                    self.current_table_bet == self.big_blind and
+                    not bb_had_option and
+                    bb_player.is_playing_round and
+                    bb_player.chips > 0
+                )
+                if not bb_option_pending:
+                    break
 
             action_index = (action_index + 1) % len(self.players)
         
