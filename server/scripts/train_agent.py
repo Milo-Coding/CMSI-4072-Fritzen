@@ -59,7 +59,11 @@ def reset_player(player: Player, chips: int):
     player.hand = []
     player.is_playing_round = True
     player.current_bet_in_round = 0
+    player.total_bet_in_hand = 0
     player.has_acted_this_round = False
+    # Keep last_chips in sync for agents that use it for reward calculation
+    if hasattr(player, 'last_chips'):
+        player.last_chips = chips
 
 
 def train(

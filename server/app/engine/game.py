@@ -389,9 +389,10 @@ class Game:
         bb_index = (self.dealer_index + 2) % len(self.players)
 
         while True:
-            # Find the next active player
+            # Find the next active player (skip folded AND all-in players)
             attempts = 0
-            while self.players[action_index] not in self._get_active_players():
+            while (self.players[action_index] not in self._get_active_players() or
+                   self.players[action_index].chips == 0):
                 action_index = (action_index + 1) % len(self.players)
                 attempts += 1
                 if attempts > len(self.players):

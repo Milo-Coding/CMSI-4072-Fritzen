@@ -219,6 +219,8 @@ class DQNAgent(BaseAgent):
         Make a random valid decision.
         """
         available = game_state.get("available_actions", ["fold"])
+        if not available:
+            return "fold"
         action = random.choice(available)
         
         if action == "check":
