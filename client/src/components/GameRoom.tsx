@@ -53,6 +53,7 @@ interface GameState {
     hand_rank: string;
     rank_value: number;
   }[];
+  showdown_winner_ids?: string[];
 }
 
 interface Room {
@@ -264,6 +265,28 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
     return suit === "Hearts" || suit === "Diamonds" ? "red" : "black";
   };
 
+  const showdownWinnerIds = new Set(gameState?.showdown_winner_ids ?? []);
+  const hasShowdownHands = (gameState?.showdown_hands?.length ?? 0) > 0;
+  const winnerNamesFromIds = (gameState?.showdown_winner_ids ?? [])
+    .map(
+      (playerId) =>
+        gameState?.players.find((player) => player.player_id === playerId)
+          ?.name ?? playerId,
+    )
+    .filter((name, index, self) => self.indexOf(name) === index);
+  const foldWinnerFallbackNames =
+    gameState?.hand_over && !hasShowdownHands
+      ? (gameState.players || [])
+          .filter((player) => player.is_playing_round)
+          .map((player) => player.name)
+      : [];
+  const handWinnerNames =
+    winnerNamesFromIds.length > 0
+      ? winnerNamesFromIds
+      : foldWinnerFallbackNames;
+  const handWonByFolds =
+    !!gameState?.hand_over && handWinnerNames.length > 0 && !hasShowdownHands;
+
   if (!connected) {
     return (
       <div className="game-room">
@@ -401,36 +424,56 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
                   <div className="showdown-display">
                     <h3>Showdown!</h3>
                     <div className="showdown-hands">
-                      {gameState.showdown_hands
-                        .sort((a, b) => b.rank_value - a.rank_value)
-                        .map((hand, idx) => (
-                          <div
-                            key={hand.player_id}
-                            className={`showdown-hand ${idx === 0 ? "winner" : ""}`}
-                          >
-                            <div className="showdown-player">
-                              {hand.player_name}
-                            </div>
-                            <div className="showdown-cards">
-                              {hand.hand.map((card, cardIdx) => (
-                                <div
-                                  key={cardIdx}
-                                  className={`card small ${getSuitColor(card.suit)}`}
-                                >
-                                  <div className="card-value">
-                                    {card.display}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                            <div className="showdown-rank">
-                              {hand.hand_rank}
-                            </div>
+                      {gameState.showdown_hands.map((hand) => (
+                        <div
+                          key={hand.player_id}
+                          className={`showdown-hand ${
+                            showdownWinnerIds.has(hand.player_id)
+                              ? "winner"
+                              : ""
+                          }`}
+                        >
+                          <div className="showdown-player">
+                            {hand.player_name}
                           </div>
-                        ))}
+                          <div className="showdown-cards">
+                            {hand.hand.map((card, cardIdx) => (
+                              <div
+                                key={cardIdx}
+                                className={`card small ${getSuitColor(card.suit)}`}
+                              >
+                                <div className="card-value">{card.display}</div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="showdown-rank">{hand.hand_rank}</div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
+
+              {/* Fold Win Display (No Showdown) */}
+              {handWonByFolds && (
+                <div className="showdown-display">
+                  <h3>Hand Result</h3>
+                  <div className="showdown-hands">
+                    {handWinnerNames.map((winnerName) => (
+                      <div key={winnerName} className="showdown-hand winner">
+                        <div className="showdown-player">{winnerName}</div>
+                        <div className="showdown-cards">
+                          <div className="showdown-no-cards">
+                            No cards revealed
+                          </div>
+                        </div>
+                        <div className="showdown-rank fold-win-text">
+                          Won by all opponents folding
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Action Log */}
