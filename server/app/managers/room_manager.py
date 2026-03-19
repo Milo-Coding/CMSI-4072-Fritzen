@@ -8,6 +8,7 @@ import uuid
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+import re
 
 from ..engine import Game, Player, GameEventType
 from ..engine.game import GamePhase
@@ -103,6 +104,112 @@ class RoomManager:
     def __init__(self):
         self._rooms: Dict[str, Room] = {}
         self._player_rooms: Dict[str, str] = {}  # player_id -> room_id
+
+    def _build_progress_signature(self, room: "Room") -> tuple:
+        """Build a hashable snapshot used to detect non-progressing game loops."""
+        if not room.game:
+            return ("no_game",)
+
+        players_state = tuple(
+            (
+                p.player_id,
+                p.chips,
+                p.is_playing_round,
+                p.current_bet_in_round,
+                p.has_acted_this_round,
+            )
+            for p in room.players
+        )
+
+        return (
+            room.game.hand_number,
+            room.game.current_phase.value,
+            room.current_player_index,
+            room.game.pot,
+            room.game.current_table_bet,
+            len(room.game.community_cards),
+            players_state,
+        )
+
+    def _resolve_stuck_room(self, room: "Room", reason: str):
+        """Fallback path when action progression appears stuck in a loop."""
+        if not room.game:
+            return
+
+        game = room.game
+        print(f"Warning: Stuck room fallback triggered for room {room.id}: {reason}")
+        game.action_log.append({
+            "player_id": None,
+            "player_name": None,
+            "action": f"--- Fallback Triggered: {reason} ---",
+            "amount": None,
+            "timestamp": game.hand_number,
+        })
+
+        try:
+            active_players = [p for p in room.players if p.is_playing_round]
+            if len(active_players) <= 1:
+                GameFlowManager._award_pot(game)
+            else:
+                # Force-complete the board so showdown evaluation can run safely.
+                while len(game.community_cards) < 5:
+                    cards_to_deal = 3 if len(game.community_cards) == 0 else 1
+                    game._deal_community(cards_to_deal)
+                game.current_phase = GamePhase.SHOWDOWN
+                GameFlowManager._showdown(game)
+        except Exception as e:
+            print(f"Error during stuck room fallback: {e}")
+            fallback_winners = [p for p in room.players if p.is_playing_round] or list(room.players)
+            if fallback_winners:
+                share = game.pot // len(fallback_winners)
+                remainder = game.pot % len(fallback_winners)
+                for winner in fallback_winners:
+                    winner._add_chips(share)
+                for i in range(remainder):
+                    fallback_winners[i]._add_chips(1)
+                game.emit_event(GameEventType.POT_AWARDED, {
+                    "winners": [p.player_id for p in fallback_winners],
+                    "amount_each": share,
+                    "total_pot": game.pot,
+                    "reason": "stuck_room_fallback_split",
+                })
+        finally:
+            room.current_player_index = None
+            game.emit_event(GameEventType.HAND_ENDED, {
+                "hand_number": game.hand_number
+            })
+
+    def _generate_unique_ai_identity(self, room: Room) -> tuple[str, str]:
+        """Generate a unique bot name/player_id pair for a room lobby."""
+        id_prefix = f"ai-{room.id}-"
+        existing_ids = {p.player_id for p in room.players}
+        existing_names = {p.name for p in room.players}
+
+        max_id_suffix = -1
+        max_name_suffix = 0
+
+        for player in room.players:
+            if not isinstance(player, BaseAgent):
+                continue
+
+            if player.player_id.startswith(id_prefix):
+                suffix = player.player_id[len(id_prefix):]
+                if suffix.isdigit():
+                    max_id_suffix = max(max_id_suffix, int(suffix))
+
+            match = re.fullmatch(r"Bot-(\d+)", player.name)
+            if match:
+                max_name_suffix = max(max_name_suffix, int(match.group(1)))
+
+        next_id_suffix = max_id_suffix + 1
+        while f"{id_prefix}{next_id_suffix}" in existing_ids:
+            next_id_suffix += 1
+
+        next_name_suffix = max_name_suffix + 1 if max_name_suffix > 0 else 1
+        while f"Bot-{next_name_suffix}" in existing_names:
+            next_name_suffix += 1
+
+        return f"Bot-{next_name_suffix}", f"{id_prefix}{next_id_suffix}"
     
     def create_room(self, config: RoomConfig) -> Room:
         """
@@ -124,13 +231,14 @@ class RoomManager:
         )
         
         # Add AI players if requested
-        for i in range(config.ai_players):
+        for _ in range(config.ai_players):
             try:
+                ai_name, ai_player_id = self._generate_unique_ai_identity(room)
                 ai_player = AgentRegistry.create(
                     config.ai_type,
-                    name=f"Bot-{i+1}",
+                    name=ai_name,
                     chips=config.starting_chips,
-                    player_id=f"ai-{room_id}-{i}",
+                    player_id=ai_player_id,
                     model_load_path=config.dqn_model_path if config.ai_type == "dqn" else None
                 )
                 room.players.append(ai_player)
@@ -151,13 +259,13 @@ class RoomManager:
         if not room or room.is_active or room.is_full:
             return None
 
-        ai_count = sum(1 for p in room.players if isinstance(p, BaseAgent))
         try:
+            ai_name, ai_player_id = self._generate_unique_ai_identity(room)
             ai_player = AgentRegistry.create(
                 room.config.ai_type,
-                name=f"Bot-{ai_count + 1}",
+                name=ai_name,
                 chips=room.config.starting_chips,
-                player_id=f"ai-{room_id}-{ai_count}",
+                player_id=ai_player_id,
                 model_load_path=room.config.dqn_model_path if room.config.ai_type == "dqn" else None
             )
             room.players.append(ai_player)
@@ -684,8 +792,25 @@ class RoomManager:
                 "hand_number": room.game.hand_number
             })
             return
+
+        max_iterations = max(100, len(room.players) * 40)
+        repeated_state_limit = max(6, len(room.players) * 2)
+        seen_states: Dict[tuple, int] = {}
+        iterations = 0
         
         while True:
+            iterations += 1
+            state_signature = self._build_progress_signature(room)
+            seen_states[state_signature] = seen_states.get(state_signature, 0) + 1
+
+            if iterations > max_iterations:
+                self._resolve_stuck_room(room, f"iteration_limit_{max_iterations}")
+                return
+
+            if seen_states[state_signature] > repeated_state_limit:
+                self._resolve_stuck_room(room, "repeated_state_detected")
+                return
+
             # Find next player to act
             next_index = GameFlowManager.get_next_player_to_act(
                 room.game, 
@@ -712,9 +837,8 @@ class RoomManager:
                     self._execute_ai_action(room, next_player)
                     # Continue loop to process next player
                 except Exception as e:
-                    print(f"Error executing AI action: {e}")
-                    # Stop on error to avoid infinite loop
-                    break
+                    self._resolve_stuck_room(room, f"ai_action_exception:{type(e).__name__}")
+                    return
             else:
                 # It's a human player's turn - but only stop if they can actually act
                 if not next_player.is_playing_round or next_player.chips == 0:

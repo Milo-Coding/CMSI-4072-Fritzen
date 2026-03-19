@@ -11,7 +11,7 @@ from app.engine.game import GamePhase
 from app.managers.game_flow import GameFlowManager
 from app.managers.room_manager import RoomManager
 from app.models.schemas import RoomConfig
-from app.engine.agents import AgentRegistry
+from app.engine.agents import AgentRegistry, BaseAgent
 
 
 class MockPlayer(Player):
@@ -354,6 +354,97 @@ class TestBankruptHumanDoesNotFreezeGame:
             assert acting_player.chips > 0, (
                 "Second hand: player awaiting action must have chips"
             )
+
+
+class TestLobbyAiIdentity:
+    """Regression tests for AI identity generation in lobby edits."""
+
+    def test_remove_middle_ai_then_add_has_unique_player_ids(self):
+        """
+        Removing a non-last bot and adding a new bot back must not duplicate
+        any existing AI player_id.
+        """
+        manager = RoomManager()
+        config = RoomConfig(
+            name="ai-id-regression",
+            max_players=5,
+            min_players=2,
+            small_blind=10,
+            big_blind=20,
+            starting_chips=200,
+            ai_players=2,
+            ai_type="random",
+        )
+        room = manager.create_room(config)
+
+        ai_ids_before = [
+            p.player_id for p in room.players if isinstance(p, BaseAgent)
+        ]
+        assert len(ai_ids_before) == 2
+        assert len(set(ai_ids_before)) == 2
+
+        # Remove the first bot (middle removal scenario once a human is present).
+        removed_id = ai_ids_before[0]
+        manager.remove_player_from_lobby(room.id, removed_id)
+
+        updated_room = manager.add_ai_player(room.id)
+        assert updated_room is not None
+
+        ai_ids_after = [
+            p.player_id for p in updated_room.players if isinstance(p, BaseAgent)
+        ]
+        assert len(ai_ids_after) == 2
+        assert len(set(ai_ids_after)) == 2, "AI player_id values must stay unique"
+
+
+class TestRoomStuckFallback:
+    """Safety checks for stuck room fallback behavior."""
+
+    def test_room_progression_fallback_breaks_non_progressing_loop(self, monkeypatch):
+        """If loop state never changes, manager should trigger fallback and end the hand."""
+        manager = RoomManager()
+        config = RoomConfig(
+            name="stuck-room-regression",
+            max_players=2,
+            min_players=2,
+            small_blind=10,
+            big_blind=20,
+            starting_chips=200,
+            ai_players=2,
+            ai_type="random",
+        )
+        room = manager.create_room(config)
+        room.is_active = True
+        room.game = Game(
+            players=room.players,
+            small_blind=room.config.small_blind,
+            big_blind=room.config.big_blind,
+        )
+        room.game.hand_number = 1
+        room.game.current_phase = GamePhase.PRE_FLOP
+        room.game._prepare_new_hand()
+        room.game._post_blinds()
+        room.game._deal_hole_cards()
+        room.current_player_index = 0
+
+        monkeypatch.setattr(
+            manager,
+            "_execute_ai_action",
+            lambda _room, _player: None,
+        )
+        monkeypatch.setattr(
+            GameFlowManager,
+            "get_next_player_to_act",
+            staticmethod(lambda _game, _idx: 0),
+        )
+
+        manager._progress_game_after_action(room)
+
+        assert room.current_player_index is None
+        assert any(
+            "Fallback Triggered" in entry.get("action", "")
+            for entry in room.game.action_log
+        ), "Fallback marker should be appended to action log"
 
 
 if __name__ == "__main__":

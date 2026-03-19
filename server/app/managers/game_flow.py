@@ -164,9 +164,16 @@ class GameFlowManager:
         """Award pot to last remaining player."""
         active = [p for p in game.players if p.is_playing_round]
         if len(active) == 1:
+            winner_ids = [active[0].player_id]
+            # Keep hand winner metadata aligned with the main engine for UI rendering.
+            if hasattr(game, "_record_showdown_winners") and callable(getattr(game, "_record_showdown_winners")):
+                game._record_showdown_winners(winner_ids)
+            else:
+                game.showdown_winner_ids = winner_ids
+
             active[0]._add_chips(game.pot)
             game.emit_event(GameEventType.POT_AWARDED, {
-                "winners": [active[0].player_id],
+                "winners": winner_ids,
                 "amount": game.pot,
                 "reason": "all_others_folded"
             })

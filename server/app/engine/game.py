@@ -79,6 +79,7 @@ class Game:
         self.side_pots: List[Dict[str, Any]] = []  # List of side pots {amount, eligible_players}
         self.action_log: List[Dict[str, Any]] = []  # Track player actions for UI display
         self.showdown_hands: List[Dict[str, Any]] = []  # Revealed hands at showdown
+        self.showdown_winner_ids: List[str] = []  # Players who won chips in the most recent hand
         
         self.debug_mode = debug_mode
         self.debug_community: List[Card] = []
@@ -225,6 +226,7 @@ class Game:
         self.action_history = []
         self.action_log = []
         self.showdown_hands = []
+        self.showdown_winner_ids = []
         
         # Notify agents that a new hand is starting
         game_state = {
@@ -822,10 +824,12 @@ class Game:
             elif len(eligible) == 1:
                 # Only one eligible player
                 eligible[0]._add_chips(pot_amount)
+                winner_ids = [eligible[0].player_id]
+                self._record_showdown_winners(winner_ids)
                 self.emit_event(GameEventType.POT_AWARDED, {
                     "pot_type": "side" if pot_idx > 0 else "main",
                     "pot_index": pot_idx,
-                    "winners": [eligible[0].player_id],
+                    "winners": winner_ids,
                     "amount": pot_amount,
                     "reason": "only_eligible"
                 })
@@ -852,11 +856,14 @@ class Game:
                     # Distribute remainder chips to first winner(s) to avoid losing chips
                     for i in range(remainder):
                         winners[i]._add_chips(1)
+
+                    winner_ids = [w.player_id for w in winners]
+                    self._record_showdown_winners(winner_ids)
                     
                     self.emit_event(GameEventType.POT_AWARDED, {
                         "pot_type": "side" if pot_idx > 0 else "main",
                         "pot_index": pot_idx,
-                        "winners": [w.player_id for w in winners],
+                        "winners": winner_ids,
                         "amount": share,
                         "total_pot": pot_amount,
                         "reason": "showdown"
@@ -868,8 +875,10 @@ class Game:
         if len(contenders) == 1:
             winner = contenders[0]
             winner._add_chips(self.pot)
+            winner_ids = [winner.player_id]
+            self._record_showdown_winners(winner_ids)
             self.emit_event(GameEventType.POT_AWARDED, {
-                "winners": [winner.player_id],
+                "winners": winner_ids,
                 "amount_each": self.pot,
                 "reason": "uncontested"
             })
@@ -906,13 +915,22 @@ class Game:
         # Distribute remainder chips to first winner(s) to avoid losing chips
         for i in range(remainder):
             winners[i]._add_chips(1)
+
+        winner_ids = [w.player_id for w in winners]
+        self._record_showdown_winners(winner_ids)
         
         self.emit_event(GameEventType.POT_AWARDED, {
-            "winners": [w.player_id for w in winners],
+            "winners": winner_ids,
             "amount_each": share,
             "total_pot": self.pot,
             "reason": "showdown"
         })
+
+    def _record_showdown_winners(self, winner_ids: List[str]):
+        """Track unique winner IDs for the current hand in seat-order of first win."""
+        for winner_id in winner_ids:
+            if winner_id not in self.showdown_winner_ids:
+                self.showdown_winner_ids.append(winner_id)
     
     def _showdown(self):
         """
@@ -929,8 +947,10 @@ class Game:
             # Award all pots to the only remaining player
             winner = contenders[0]
             winner._add_chips(self.pot)
+            winner_ids = [winner.player_id]
+            self._record_showdown_winners(winner_ids)
             self.emit_event(GameEventType.POT_AWARDED, {
-                "winners": [winner.player_id],
+                "winners": winner_ids,
                 "amount_each": self.pot,
                 "reason": "uncontested"
             })
@@ -974,8 +994,10 @@ class Game:
         if len(contenders) == 1:
             winner = contenders[0]
             winner._add_chips(self.pot)
+            winner_ids = [winner.player_id]
+            self._record_showdown_winners(winner_ids)
             self.emit_event(GameEventType.POT_AWARDED, {
-                "winners": [winner.player_id],
+                "winners": winner_ids,
                 "amount_each": self.pot,
                 "reason": "others_folded"
             })
@@ -1037,7 +1059,8 @@ class Game:
             "active_player_count": len(self._get_active_players()),
             "side_pots": self.side_pots,
             "action_log": self.action_log,
-            "showdown_hands": self.showdown_hands
+            "showdown_hands": self.showdown_hands,
+            "showdown_winner_ids": self.showdown_winner_ids
         }
     
     def get_player_view(self, player_id: str) -> dict:
@@ -1064,5 +1087,6 @@ class Game:
             "active_player_count": len(self._get_active_players()),
             "side_pots": self.side_pots,
             "action_log": self.action_log,
-            "showdown_hands": self.showdown_hands
+            "showdown_hands": self.showdown_hands,
+            "showdown_winner_ids": self.showdown_winner_ids
         }

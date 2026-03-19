@@ -7,8 +7,6 @@ Provides endpoints for:
 - Game state queries (for polling-based clients)
 """
 
-import glob
-import os
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
@@ -322,11 +320,27 @@ async def list_models():
     Returns:
         List of model filenames and their paths
     """
-    models_dir = Path(__file__).parent.parent.parent / "models"
-    if not models_dir.exists():
-        return {"models": []}
-    
-    pth_files = sorted(models_dir.glob("*.pth"))
+    server_root = Path(__file__).resolve().parents[2]
+    cwd = Path.cwd()
+
+    candidate_dirs = [
+        server_root / "models",
+        cwd / "server" / "models",
+        cwd / "models",
+    ]
+
+    seen_paths = set()
+    pth_files = []
+    for models_dir in candidate_dirs:
+        if not models_dir.exists() or not models_dir.is_dir():
+            continue
+        for model_path in sorted(models_dir.glob("*.pth")):
+            resolved = str(model_path.resolve())
+            if resolved not in seen_paths:
+                seen_paths.add(resolved)
+                pth_files.append(model_path.resolve())
+
+    pth_files.sort(key=lambda p: p.name)
     return {
         "models": [
             {"name": f.name, "path": str(f)}
