@@ -158,3 +158,81 @@ class TestDQNAgentImport:
             if "PyTorch" in str(e):
                 pytest.skip("PyTorch not installed")
             raise
+
+    @pytest.mark.skipif(
+        not pytest.importorskip("torch", reason="PyTorch not installed"),
+        reason="PyTorch required for DQN agent"
+    )
+    def test_dqn_traces_all_actions_in_hand(self):
+        """DQN should record each decision taken during a hand in its action trace."""
+        agent = AgentRegistry.create("dqn", name="TraceBot", chips=1000, is_training=False)
+        agent.on_hand_start({})
+
+        game_state = {
+            "state_name": "Flop",
+            "available_actions": ["call"],
+            "call_amount": 20,
+            "current_table_bet": 40,
+            "pot": 120,
+            "community_cards": [],
+            "opponents_chips": [980],
+            "dealer_index": 0,
+            "agent_index": 1,
+            "players": [
+                {
+                    "player_id": "opp",
+                    "name": "Opp",
+                    "chips": 980,
+                    "is_playing_round": True,
+                    "current_bet_in_round": 40,
+                    "total_bet_in_hand": 20,
+                    "has_acted_this_round": True,
+                },
+                {
+                    "player_id": "trace",
+                    "name": "TraceBot",
+                    "chips": 1000,
+                    "is_playing_round": True,
+                    "current_bet_in_round": 20,
+                    "total_bet_in_hand": 20,
+                    "has_acted_this_round": False,
+                },
+            ],
+        }
+
+        agent.decide_action(game_state)
+        agent.decide_action(game_state)
+        agent.decide_action(game_state)
+
+        assert len(agent.hand_action_trace) == 3
+        assert all(entry["action"] == "call" for entry in agent.hand_action_trace)
+
+    @pytest.mark.skipif(
+        not pytest.importorskip("torch", reason="PyTorch not installed"),
+        reason="PyTorch required for DQN agent"
+    )
+    def test_dqn_reward_penalizes_larger_committed_loss(self):
+        """Chip losses with higher commitment/action volume should receive lower reward."""
+        agent = AgentRegistry.create("dqn", name="RewardBot", chips=1000, is_training=True)
+
+        agent.hand_start_chips = 1000
+        agent.chips = 900
+        agent.total_bet_in_hand = 120
+        agent.hand_action_trace = [
+            {"commitment_estimate": 60.0},
+            {"commitment_estimate": 60.0},
+        ]
+        lower_commitment_reward = agent._calculate_reward({"chip_change": -100})
+
+        agent.hand_start_chips = 1000
+        agent.chips = 900
+        agent.total_bet_in_hand = 400
+        agent.hand_action_trace = [
+            {"commitment_estimate": 100.0},
+            {"commitment_estimate": 100.0},
+            {"commitment_estimate": 100.0},
+            {"commitment_estimate": 100.0},
+        ]
+        higher_commitment_reward = agent._calculate_reward({"chip_change": -100})
+
+        assert higher_commitment_reward < lower_commitment_reward
