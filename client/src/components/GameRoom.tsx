@@ -375,19 +375,6 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
 
   return (
     <div className="game-room">
-      <div className="game-header">
-        <div className="room-info">
-          <h2>{room?.name || `Room ${roomId}`}</h2>
-          <span className="room-stats">
-            {room?.player_count || 0} / {room?.max_players || 0} players
-          </span>
-          <span className="room-phase">{room?.phase || "waiting"}</span>
-        </div>
-        <button onClick={handleLeave} className="leave-button">
-          Leave Room
-        </button>
-      </div>
-
       {error && <div className="error-message">{error}</div>}
 
       {!room?.is_active && (
@@ -814,6 +801,19 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
           </div>
         </div>
       )}
+
+      <div className="game-footer" role="contentinfo">
+        <div className="room-info">
+          <h2>{room?.name || `Room ${roomId}`}</h2>
+          <span className="room-stats">
+            {room?.player_count || 0} / {room?.max_players || 0} players
+          </span>
+          <span className="room-phase">{room?.phase || "waiting"}</span>
+        </div>
+        <button onClick={handleLeave} className="leave-button">
+          Leave Room
+        </button>
+      </div>
     </div>
   );
 }

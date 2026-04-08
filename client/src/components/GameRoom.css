@@ -1,17 +1,21 @@
 .game-room {
   width: 100%;
   min-height: 100vh;
-  padding: 1rem;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
 }
 
-.game-header {
+.game-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 2rem;
+  padding: 0.75rem 1rem;
   background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
   border-radius: 12px;
-  margin-bottom: 2rem;
+  margin-top: auto;
+  bottom: 0.75rem;
+  z-index: 20;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
 }
 
@@ -72,14 +76,14 @@
 .game-area {
   display: grid;
   grid-template-rows: auto 1fr auto;
-  gap: 2rem;
-  min-height: 70vh;
+  gap: 1rem;
+  min-height: auto;
 }
 
 /* Community Area */
 .community-area {
   text-align: center;
-  padding: 2rem;
+  padding: 1rem;
   background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%);
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
@@ -98,7 +102,7 @@
 
 .pot-amount {
   display: block;
-  font-size: 2rem;
+  font-size: 1.75rem;
   font-weight: bold;
   color: #ffd700;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
@@ -118,9 +122,9 @@
 .community-cards {
   display: flex;
   justify-content: center;
-  gap: 1rem;
-  margin: 1.5rem 0;
-  min-height: 120px;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  min-height: 90px;
   align-items: center;
 }
 
@@ -130,7 +134,7 @@
 }
 
 .phase-indicator {
-  font-size: 1.1rem;
+  font-size: 1rem;
   color: rgba(255, 255, 255, 0.9);
   font-weight: 500;
   text-transform: uppercase;
@@ -140,14 +144,14 @@
 /* Players Area */
 .players-area {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 1rem;
-  padding: 0 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  padding: 0 0.5rem;
 }
 
 .player-card {
   background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
-  padding: 1.5rem;
+  padding: 1rem;
   border-radius: 8px;
   border: 2px solid transparent;
   transition: all 0.2s;
@@ -240,7 +244,7 @@
 /* Your Area */
 .your-area {
   background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
-  padding: 2rem;
+  padding: 1rem;
   border-radius: 12px;
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
 }
@@ -248,7 +252,7 @@
 .your-area-content {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.5rem;
+  gap: 1rem;
   align-items: center;
 }
 
@@ -271,35 +275,35 @@
 
 .your-hand h3 {
   text-align: center;
-  margin-bottom: 1rem;
+  margin-bottom: 0.6rem;
   color: #f0f0f0;
 }
 
 .hand-cards {
   display: flex;
   justify-content: center;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 /* Cards */
 .card {
   background: white;
   border-radius: 8px;
-  padding: 1rem;
-  min-width: 60px;
-  min-height: 85px;
+  padding: 0.75rem;
+  min-width: 52px;
+  min-height: 74px;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   font-weight: bold;
-  font-size: 1.2rem;
+  font-size: 1rem;
 }
 
 .card.large {
-  min-width: 80px;
-  min-height: 110px;
-  font-size: 1.5rem;
+  min-width: 70px;
+  min-height: 96px;
+  font-size: 1.25rem;
 }
 
 .card.tiny {
@@ -323,7 +327,7 @@
 
 /* Action Area */
 .action-area {
-  min-height: 80px;
+  min-height: 64px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -377,10 +381,10 @@
 }
 
 .action-button {
-  padding: 0.75rem 1.5rem;
+  padding: 0.6rem 1.1rem;
   border: none;
   border-radius: 6px;
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
@@ -453,13 +457,13 @@
 }
 
 .bet-input {
-  padding: 0.75rem;
+  padding: 0.6rem;
   border: 2px solid #424242;
   border-radius: 6px;
   background: #2a2a2a;
   color: #f0f0f0;
-  font-size: 1rem;
-  width: 120px;
+  font-size: 0.95rem;
+  width: 100px;
 }
 
 .bet-input:focus {
@@ -487,7 +491,7 @@
 /* Action Log */
 .game-main {
   display: flex;
-  gap: 1.5rem;
+  gap: 1rem;
   align-items: flex-start;
 }
 
@@ -496,12 +500,12 @@
 }
 
 .action-log {
-  width: 280px;
-  max-height: 380px;
+  width: 240px;
+  max-height: 320px;
   background: rgba(30, 30, 30, 0.95);
   border: 2px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
-  padding: 1rem;
+  padding: 0.75rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
@@ -509,11 +513,11 @@
 
 .action-log h3 {
   margin-top: 0;
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
   color: #f0f0f0;
-  font-size: 1.1rem;
+  font-size: 1rem;
   border-bottom: 2px solid rgba(255, 255, 255, 0.1);
-  padding-bottom: 0.5rem;
+  padding-bottom: 0.4rem;
 }
 
 .log-entries {
@@ -529,17 +533,17 @@
 .log-entry {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem;
+  gap: 0.35rem;
+  padding: 0.35rem;
   background: rgba(255, 255, 255, 0.05);
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
 }
 
 .log-player {
   font-weight: bold;
   color: #90caf9;
-  min-width: 80px;
+  min-width: 68px;
 }
 
 .log-action {
@@ -744,20 +748,20 @@
   background: rgba(18, 18, 18, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 10px;
-  padding: 1rem;
+  padding: 0.75rem;
 }
 
 .bet-tracker h3 {
-  margin: 0 0 0.75rem;
+  margin: 0 0 0.5rem;
   color: #f0f0f0;
-  font-size: 1rem;
+  font-size: 0.92rem;
   letter-spacing: 0.04em;
 }
 
 .bet-tracker-header,
 .bet-tracker-row {
   display: grid;
-  grid-template-columns: 1.6fr 1fr 1fr;
+  grid-template-columns: 1.4fr 1fr 1fr;
   gap: 0.5rem;
   align-items: center;
 }
@@ -805,11 +809,140 @@
   padding: 0.75rem 0;
 }
 
+@media (max-width: 1280px) {
+  .game-room {
+    padding: 0.5rem;
+  }
+
+  .room-info {
+    gap: 1rem;
+  }
+
+  .room-stats,
+  .room-phase {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.82rem;
+  }
+
+  .game-main {
+    gap: 0.75rem;
+  }
+
+  .action-log {
+    width: 210px;
+    max-height: 260px;
+  }
+
+  .players-area {
+    grid-template-columns: repeat(auto-fit, minmax(125px, 1fr));
+  }
+
+  .player-card {
+    padding: 0.75rem;
+  }
+
+  .your-area-content {
+    grid-template-columns: 1.1fr 1fr 0.95fr;
+    gap: 0.75rem;
+  }
+
+  .action-button {
+    padding: 0.52rem 0.9rem;
+    font-size: 0.82rem;
+  }
+
+  .card.large {
+    min-width: 64px;
+    min-height: 88px;
+    font-size: 1.1rem;
+  }
+
+  .card.tiny {
+    min-width: 36px;
+    min-height: 50px;
+    font-size: 0.66rem;
+  }
+}
+
+@media (max-height: 800px) and (min-width: 981px) {
+  .game-footer {
+    padding: 0.55rem 0.85rem;
+  }
+
+  .game-area {
+    gap: 0.7rem;
+  }
+
+  .community-area {
+    padding: 0.75rem;
+  }
+
+  .pot-amount {
+    font-size: 1.55rem;
+  }
+
+  .community-cards {
+    margin: 0.75rem 0;
+    min-height: 78px;
+  }
+
+  .players-area {
+    gap: 0.6rem;
+  }
+
+  .player-card {
+    padding: 0.7rem;
+  }
+
+  .your-area {
+    padding: 0.75rem;
+  }
+
+  .action-area {
+    min-height: 56px;
+  }
+
+  .action-log {
+    max-height: 220px;
+  }
+}
+
 @media (max-width: 980px) {
+  .game-footer {
+    position: static;
+    margin-top: 1rem;
+    bottom: auto;
+  }
+
+  .room-info {
+    flex-wrap: wrap;
+    row-gap: 0.35rem;
+  }
+
+  .game-main {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .action-log {
+    width: 100%;
+    max-height: 190px;
+  }
+
   .your-area-content {
     display: flex;
     flex-direction: column;
     align-items: center;
+  }
+
+  .players-area {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+
+  .card.large {
+    min-width: 62px;
+    min-height: 84px;
+    font-size: 1rem;
   }
 
   .action-area {
