@@ -13,6 +13,7 @@ Changes from original:
 """
 
 import random
+import math
 from typing import Dict, List, Any, Optional, Union, Tuple
 from pathlib import Path
 
@@ -175,11 +176,18 @@ class DQNAgent(BaseAgent):
         self.training_episodes = 0
         self.wins = 0
         self.losses = 0
+        self.last_reward = 0.0
+        self.cumulative_reward = 0.0
+        self.cumulative_chip_delta = 0.0
         
         # State tracking for learning
         self.last_state: Optional[List[float]] = None
         self.last_action: Optional[int] = None
         self.current_state: Optional[List[float]] = None
+
+        # Per-hand action trace so terminal rewards can reflect all actions taken
+        self.hand_start_chips = chips
+        self.hand_action_trace: List[Dict[str, Any]] = []
         
         # Load existing model if specified
         if model_load_path:
@@ -211,8 +219,15 @@ class DQNAgent(BaseAgent):
         # Store for training
         self.last_state = self.current_state
         self.last_action = self._action_to_index(action)
+        self._record_hand_action(game_state, action, features)
         
         return action
+
+    def on_hand_start(self, game_state: Dict[str, Any]) -> None:
+        """Reset per-hand trace and chip baseline at the start of a hand."""
+        super().on_hand_start(game_state)
+        self.hand_start_chips = self.chips
+        self.hand_action_trace = []
     
     def _decide_randomly(self, game_state: Dict[str, Any]) -> Union[str, Tuple[str, int]]:
         """
@@ -306,6 +321,70 @@ class DQNAgent(BaseAgent):
             "all_in": self.ACTION_RAISE  # Treat all-in as aggressive raise action
         }
         return mapping.get(action_type, self.ACTION_FOLD)
+
+    def _normalize_action(self, action: Union[str, Tuple[str, int]]) -> Tuple[str, Optional[int]]:
+        """Convert actions to a normalized (action_type, amount) tuple."""
+        if isinstance(action, tuple):
+            action_type = str(action[0])
+            amount = int(action[1]) if len(action) > 1 else None
+            return action_type, amount
+        return str(action), None
+
+    def _estimate_action_commitment(
+        self,
+        game_state: Dict[str, Any],
+        action_type: str,
+        amount: Optional[int]
+    ) -> float:
+        """Estimate chips committed by this action using available game-state context."""
+        call_amount = float(game_state.get("call_amount", 0))
+        agent_index = int(game_state.get("agent_index", 0))
+        players = game_state.get("players", [])
+        player_current_bet = 0.0
+        if 0 <= agent_index < len(players):
+            player_current_bet = float(players[agent_index].get("current_bet_in_round", 0))
+
+        if action_type in {"check", "fold"}:
+            return 0.0
+        if action_type == "call":
+            return max(0.0, call_amount)
+        if action_type == "bet":
+            return max(0.0, float(amount or 0))
+        if action_type == "raise":
+            target_wager = float(max(0, amount or 0))
+            return max(0.0, target_wager - player_current_bet)
+        if action_type == "all_in":
+            return float(max(0, self.chips))
+
+        return 0.0
+
+    def _record_hand_action(
+        self,
+        game_state: Dict[str, Any],
+        action: Union[str, Tuple[str, int]],
+        features: Dict[str, float]
+    ) -> None:
+        """Append a compact action record for this hand's terminal reward shaping."""
+        action_type, amount = self._normalize_action(action)
+        commitment_estimate = self._estimate_action_commitment(game_state, action_type, amount)
+
+        self.hand_action_trace.append({
+            "stage": game_state.get("state_name", "Pre-Flop"),
+            "action": action_type,
+            "amount": amount,
+            "call_amount": game_state.get("call_amount", 0),
+            "pot": game_state.get("pot", 0),
+            "current_table_bet": game_state.get("current_table_bet", 0),
+            "commitment_estimate": commitment_estimate,
+            "feature_snapshot": {
+                "pot_size_ratio": features.get("pot_size_ratio", 0.0),
+                "call_amount_ratio": features.get("call_amount_ratio", 0.0),
+                "table_bet_ratio": features.get("table_bet_ratio", 0.0),
+                "pot_odds": features.get("pot_odds", 0.0),
+                "stage": features.get("stage", 0.0),
+                "relative_position": features.get("relative_position", 0.0)
+            }
+        })
     
     def _features_to_list(self, features: Dict[str, float]) -> List[float]:
         """Convert feature dict to ordered list."""
@@ -420,7 +499,10 @@ class DQNAgent(BaseAgent):
         self.training_episodes += 1
         
         # Calculate reward
-        reward = self._calculate_reward()
+        reward = self._calculate_reward(result)
+        self.last_reward = reward
+        self.cumulative_reward += reward
+        self.cumulative_chip_delta += float(self.chips - self.hand_start_chips)
         
         # Store experience
         if self.last_state is not None and self.last_action is not None:
@@ -446,9 +528,37 @@ class DQNAgent(BaseAgent):
         elif self.chips < self.last_chips:
             self.losses += 1
     
-    def _calculate_reward(self) -> float:
-        """Calculate reward based on chip change."""
-        return float(self.chips - self.last_chips)
+    def _calculate_reward(self, result: Optional[Dict[str, Any]] = None) -> float:
+        """
+        Calculate terminal hand reward from chip outcomes and full-hand action trace.
+
+        This keeps one replay entry per hand while making the reward reflect all
+        actions taken during that hand via aggregate commitment and action counts.
+        """
+        result = result or {}
+
+        net_chip_delta = float(result.get("chip_change", self.chips - self.hand_start_chips))
+        hand_start = max(1.0, float(self.hand_start_chips))
+        total_bet_in_hand = float(getattr(self, "total_bet_in_hand", 0))
+        trace_commitment = float(sum(a.get("commitment_estimate", 0.0) for a in self.hand_action_trace))
+        effective_commitment = max(1.0, total_bet_in_hand, trace_commitment)
+        action_count = max(1.0, float(len(self.hand_action_trace)))
+
+        # Build a raw chip score directly from chip outcomes.
+        raw_chip_reward = net_chip_delta
+
+        # Extra downside pressure for large committed losses (chip-outcome only).
+        if net_chip_delta < 0:
+            commitment_penalty = 0.20 * effective_commitment
+            action_penalty = 2.0 * max(0.0, action_count - 1.0)
+            raw_chip_reward -= commitment_penalty + action_penalty
+
+        # Use a centered sigmoid to keep reward bounded in [-1, 1] without hard clipping.
+        # Temperature controls sensitivity and scales with stack size.
+        temperature = max(20.0, hand_start * 0.1)
+        logits = raw_chip_reward / temperature
+        logits = max(-60.0, min(60.0, logits))
+        return (2.0 / (1.0 + math.exp(-logits))) - 1.0
     
     def store_experience(self, state, action, reward, next_state, done):
         """Store experience in replay memory."""
@@ -539,18 +649,28 @@ class DQNAgent(BaseAgent):
         self.training_episodes = 0
         self.wins = 0
         self.losses = 0
+        self.last_reward = 0.0
+        self.cumulative_reward = 0.0
+        self.cumulative_chip_delta = 0.0
+        self.hand_action_trace = []
+        self.hand_start_chips = self.chips
         self.model = PokerNet(self.input_size, self.hidden_size)
         self.optimizer = optim.Adam(self.model.parameters())
     
     def get_stats(self) -> Dict[str, Any]:
         """Get agent statistics including training info."""
         stats = super().get_stats()
+        avg_reward = self.cumulative_reward / self.training_episodes if self.training_episodes > 0 else 0.0
+        avg_chip_delta = self.cumulative_chip_delta / self.training_episodes if self.training_episodes > 0 else 0.0
         stats.update({
             "is_training": self.is_training,
             "epsilon": self.epsilon,
             "training_episodes": self.training_episodes,
             "memory_size": len(self.memory),
             "train_wins": self.wins,
-            "train_losses": self.losses
+            "train_losses": self.losses,
+            "last_reward": self.last_reward,
+            "avg_reward": avg_reward,
+            "avg_chip_delta": avg_chip_delta
         })
         return stats

@@ -15,7 +15,6 @@ Usage:
 
 import argparse
 import sys
-import os
 from pathlib import Path
 from datetime import datetime
 
@@ -168,9 +167,6 @@ def train(
             for opponent in opponents:
                 reset_player(opponent, initial_chips)
             
-            # Track starting chips
-            trainee_start_chips = training_agent.chips
-            
             # Create game
             game = Game(
                 players=players,
@@ -205,10 +201,15 @@ def train(
             if verbose and (game_num + 1) % 500 == 0:
                 win_rate = stats["trainee_game_wins"] / stats["games_played"] * 100
                 epsilon = training_agent.epsilon if hasattr(training_agent, 'epsilon') else 0
+                train_stats = training_agent.get_stats() if hasattr(training_agent, "get_stats") else {}
+                avg_chip_delta = train_stats.get("avg_chip_delta", 0.0)
+                avg_reward = train_stats.get("avg_reward", 0.0)
                 print(f"Game {game_num + 1}/{num_games} | "
                       f"Win Rate: {win_rate:.1f}% | "
                       f"Epsilon: {epsilon:.3f} | "
-                      f"Hands: {stats['hands_played']}")
+                    f"Avg Chips/Hand: {avg_chip_delta:.2f} | "
+                    f"Avg Reward: {avg_reward:.4f} | "
+                    f"Hands: {stats['hands_played']}")
             
             # Periodic save
             if (game_num + 1) % save_every == 0:
@@ -236,6 +237,10 @@ def train(
     print(f"Ties:            {stats['ties']}")
     print(f"Time elapsed:    {elapsed:.1f}s ({stats['hands_played']/max(1,elapsed):.1f} hands/sec)")
     print(f"Final epsilon:   {training_agent.epsilon:.4f}")
+    if hasattr(training_agent, "get_stats"):
+        train_stats = training_agent.get_stats()
+        print(f"Avg chips/hand:  {train_stats.get('avg_chip_delta', 0.0):.2f}")
+        print(f"Avg reward:      {train_stats.get('avg_reward', 0.0):.4f}")
     print(f"Memory size:     {len(training_agent.memory)}")
     print(f"Model saved to:  {model_save_path}")
     print("=" * 60)
