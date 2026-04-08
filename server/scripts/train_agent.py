@@ -10,7 +10,7 @@ Usage:
     python -m scripts.train_agent --opponent random --save-path ./models/my_agent.pth
     python -m scripts.train_agent --load-path ./models/existing.pth --games 500
     python -m scripts.train_agent --players 6 --opponent dqn-train --games 10000
-    python -m scripts.train_agent --opponent dqn --opponent-model ./models/train_vs_random.pth --save-path ./models/train_vs_dqn_r10000.pth --games 1000 -p 6
+    python -m scripts.train_agent --opponent dqn --opponent-model ./models/simple_trained.pth --save-path ./models/trained_vs_simple.pth --games 1000 -p 6
 """
 
 import argparse
