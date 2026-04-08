@@ -14,6 +14,7 @@ interface PlayerPublic {
   hand_size: number;
   is_playing_round: boolean;
   current_bet_in_round: number;
+  total_bet_in_hand: number;
   has_acted_this_round: boolean;
   is_agent: boolean;
   is_all_in: boolean;
@@ -84,7 +85,11 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
   const [error, setError] = useState<string | null>(null);
   const [betAmount, setBetAmount] = useState(0);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
+  const [communityAreaHeight, setCommunityAreaHeight] = useState<number | null>(
+    null,
+  );
   const ws = useRef<WebSocket | null>(null);
+  const communityAreaRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     connectWebSocket();
@@ -95,6 +100,29 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
       }
     };
   }, [roomId, playerName]);
+
+  useEffect(() => {
+    const communityArea = communityAreaRef.current;
+    if (!communityArea) {
+      setCommunityAreaHeight(null);
+      return;
+    }
+
+    const syncHeight = () => {
+      setCommunityAreaHeight(
+        Math.round(communityArea.getBoundingClientRect().height),
+      );
+    };
+
+    syncHeight();
+
+    const observer = new ResizeObserver(() => {
+      syncHeight();
+    });
+    observer.observe(communityArea);
+
+    return () => observer.disconnect();
+  }, [room?.is_active]);
 
   const connectWebSocket = () => {
     const wsUrl = `${WS_BASE}/ws/game/${roomId}?player_name=${encodeURIComponent(
@@ -267,26 +295,71 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
 
   const showdownWinnerIds = new Set(gameState?.showdown_winner_ids ?? []);
   const hasShowdownHands = (gameState?.showdown_hands?.length ?? 0) > 0;
-  const winnerNamesFromIds = (gameState?.showdown_winner_ids ?? [])
-    .map(
-      (playerId) =>
-        gameState?.players.find((player) => player.player_id === playerId)
-          ?.name ?? playerId,
-    )
-    .filter((name, index, self) => self.indexOf(name) === index);
-  const foldWinnerFallbackNames =
-    gameState?.hand_over && !hasShowdownHands
-      ? (gameState.players || [])
+  const showdownHandByPlayerId = new Map(
+    (gameState?.showdown_hands ?? []).map((hand) => [hand.player_id, hand]),
+  );
+  const handWinnerIds = (() => {
+    if (showdownWinnerIds.size > 0) {
+      return showdownWinnerIds;
+    }
+    if (gameState?.hand_over && !hasShowdownHands) {
+      return new Set(
+        (gameState.players || [])
           .filter((player) => player.is_playing_round)
-          .map((player) => player.name)
-      : [];
-  const handWinnerNames =
-    winnerNamesFromIds.length > 0
-      ? winnerNamesFromIds
-      : foldWinnerFallbackNames;
-  const handWonByFolds =
-    !!gameState?.hand_over && handWinnerNames.length > 0 && !hasShowdownHands;
+          .map((player) => player.player_id),
+      );
+    }
+    return new Set<string>();
+  })();
+  const yourPlayer =
+    gameState && gameState.your_index >= 0
+      ? gameState.players[gameState.your_index]
+      : null;
+  const raiseAdditionalCost = Math.max(
+    0,
+    betAmount - (yourPlayer?.current_bet_in_round ?? 0),
+  );
+  const roundBetByPlayerId = (() => {
+    if (!gameState) {
+      return {} as Record<string, number>;
+    }
 
+    const log = gameState.action_log || [];
+    const totals: Record<string, number> = {};
+
+    // Current betting street starts after the most recent phase divider.
+    let roundStartIndex = 0;
+    for (let i = log.length - 1; i >= 0; i -= 1) {
+      const entry = log[i];
+      if (entry.player_name === null && entry.action.startsWith("---")) {
+        roundStartIndex = i + 1;
+        break;
+      }
+    }
+
+    for (let i = roundStartIndex; i < log.length; i += 1) {
+      const entry = log[i];
+      if (!entry.player_id || entry.amount == null) {
+        continue;
+      }
+
+      const normalizedAction = entry.action.toLowerCase();
+      const contributesChips =
+        normalizedAction === "small blind" ||
+        normalizedAction === "big blind" ||
+        normalizedAction === "call" ||
+        normalizedAction === "bet" ||
+        normalizedAction === "raise" ||
+        normalizedAction === "all-in" ||
+        normalizedAction === "all in";
+
+      if (contributesChips) {
+        totals[entry.player_id] = (totals[entry.player_id] || 0) + entry.amount;
+      }
+    }
+
+    return totals;
+  })();
   if (!connected) {
     return (
       <div className="game-room">
@@ -381,7 +454,7 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
         <div className="game-area">
           <div className="game-main">
             {/* Community Cards */}
-            <div className="community-area">
+            <div className="community-area" ref={communityAreaRef}>
               <div className="pot-display">
                 <span className="pot-label">Pot</span>
                 <span className="pot-amount">${gameState.pot || 0}</span>
@@ -417,67 +490,20 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
               <div className="phase-indicator">
                 {gameState.phase || "waiting"}
               </div>
-
-              {/* Showdown Hands Display */}
-              {gameState.showdown_hands &&
-                gameState.showdown_hands.length > 0 && (
-                  <div className="showdown-display">
-                    <h3>Showdown!</h3>
-                    <div className="showdown-hands">
-                      {gameState.showdown_hands.map((hand) => (
-                        <div
-                          key={hand.player_id}
-                          className={`showdown-hand ${
-                            showdownWinnerIds.has(hand.player_id)
-                              ? "winner"
-                              : ""
-                          }`}
-                        >
-                          <div className="showdown-player">
-                            {hand.player_name}
-                          </div>
-                          <div className="showdown-cards">
-                            {hand.hand.map((card, cardIdx) => (
-                              <div
-                                key={cardIdx}
-                                className={`card small ${getSuitColor(card.suit)}`}
-                              >
-                                <div className="card-value">{card.display}</div>
-                              </div>
-                            ))}
-                          </div>
-                          <div className="showdown-rank">{hand.hand_rank}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              {/* Fold Win Display (No Showdown) */}
-              {handWonByFolds && (
-                <div className="showdown-display">
-                  <h3>Hand Result</h3>
-                  <div className="showdown-hands">
-                    {handWinnerNames.map((winnerName) => (
-                      <div key={winnerName} className="showdown-hand winner">
-                        <div className="showdown-player">{winnerName}</div>
-                        <div className="showdown-cards">
-                          <div className="showdown-no-cards">
-                            No cards revealed
-                          </div>
-                        </div>
-                        <div className="showdown-rank fold-win-text">
-                          Won by all opponents folding
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Action Log */}
-            <div className="action-log">
+            <div
+              className="action-log"
+              style={
+                communityAreaHeight
+                  ? {
+                      height: `${communityAreaHeight}px`,
+                      maxHeight: `${communityAreaHeight}px`,
+                    }
+                  : undefined
+              }
+            >
               <h3>Action Log</h3>
               <div className="log-entries">
                 {(gameState.action_log || [])
@@ -508,186 +534,282 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
 
           {/* Other Players */}
           <div className="players-area">
-            {(gameState.players || []).map((player, idx) => (
-              <div
-                key={player.player_id}
-                className={`player-card ${
-                  idx === gameState.dealer_index ? "dealer" : ""
-                } ${idx === gameState.your_index ? "you" : ""}`}
-              >
-                <div className="player-name">
-                  {player.name}
-                  {idx === gameState.dealer_index && " 🎯"}
-                  {idx === gameState.your_index && " (You)"}
-                </div>
-                <div className="player-chips">${player.chips}</div>
-                <div className="player-bet">
-                  {player.current_bet_in_round > 0 &&
-                    `Bet: $${player.current_bet_in_round}`}
-                </div>
-                <div className="player-cards">
-                  {player.hand_size > 0 &&
-                    `${player.hand_size} card${player.hand_size > 1 ? "s" : ""}`}
-                </div>
-                {!player.is_playing_round && (
-                  <div className="player-status folded">Folded</div>
-                )}
-                {player.is_all_in && (
-                  <div
-                    className="player-status all-in"
-                    style={{
-                      backgroundColor: "#FF9800",
-                      color: "white",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    ALL-IN
+            {(gameState.players || []).map((player, idx) => {
+              const showdownHand = showdownHandByPlayerId.get(player.player_id);
+              const isHandWinner =
+                gameState.hand_over && handWinnerIds.has(player.player_id);
+
+              return (
+                <div
+                  key={player.player_id}
+                  className={`player-card ${
+                    idx === gameState.dealer_index ? "dealer" : ""
+                  } ${idx === gameState.your_index ? "you" : ""} ${
+                    isHandWinner ? "hand-winner" : ""
+                  }`}
+                >
+                  <div className="player-name-row">
+                    <div className="player-name">
+                      {player.name}
+                      {idx === gameState.dealer_index && " 🎯"}
+                      {idx === gameState.your_index && " (You)"}
+                    </div>
+                    {isHandWinner && (
+                      <div className="player-winner-badge">Winner</div>
+                    )}
                   </div>
-                )}
-              </div>
-            ))}
+                  <div className="player-chips">${player.chips}</div>
+                  <div className="player-bet">
+                    {(roundBetByPlayerId[player.player_id] || 0) > 0 &&
+                      `Bet: $${roundBetByPlayerId[player.player_id]}`}
+                  </div>
+                  {gameState.hand_over && showdownHand ? (
+                    <>
+                      <div className="player-showdown-cards">
+                        {showdownHand.hand.map((card, cardIdx) => (
+                          <div
+                            key={cardIdx}
+                            className={`card tiny ${getSuitColor(card.suit)}`}
+                          >
+                            <div className="card-value">{card.display}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="player-showdown-rank">
+                        {showdownHand.hand_rank}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="player-cards">
+                      {!gameState.hand_over &&
+                        player.hand_size > 0 &&
+                        `${player.hand_size} card${player.hand_size > 1 ? "s" : ""}`}
+                    </div>
+                  )}
+                  {!player.is_playing_round && (
+                    <div className="player-status folded">Folded</div>
+                  )}
+                  {player.is_all_in && (
+                    <div
+                      className="player-status all-in"
+                      style={{
+                        backgroundColor: "#FF9800",
+                        color: "white",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      ALL-IN
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {/* Your Hand */}
           <div className="your-area">
-            <div className="your-hand">
-              <h3>Your Hand</h3>
-              <div className="hand-cards">
-                {(gameState.your_hand || []).map((card, idx) => (
-                  <div
-                    key={idx}
-                    className={`card large ${getSuitColor(card.suit)}`}
-                  >
-                    <div className="card-value">{card.display}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="action-area">
-              {gameState.game_over ? (
-                <div style={{ textAlign: "center" }}>
-                  <h2 style={{ color: "#FFD700", marginBottom: "20px" }}>
-                    🏆 {gameState.winner?.name} Wins! 🏆
-                  </h2>
-                  <p style={{ marginBottom: "20px", fontSize: "16px" }}>
-                    Winner takes all {gameState.winner?.chips} chips!
-                  </p>
-                  <button
-                    onClick={resetRoom}
-                    className="action-button reset"
-                    style={{
-                      backgroundColor: "#2196F3",
-                      fontSize: "18px",
-                      padding: "15px 30px",
-                    }}
-                  >
-                    Reset Room & Play Again
-                  </button>
-                </div>
-              ) : gameState.hand_over ? (
-                <button
-                  onClick={nextHand}
-                  className="action-button next-hand"
-                  style={{
-                    backgroundColor: "#4CAF50",
-                    fontSize: "18px",
-                    padding: "15px 30px",
-                  }}
-                >
-                  Deal Next Hand
-                </button>
-              ) : gameState.is_your_turn ? (
-                <>
-                  <div className="action-buttons">
-                    {(gameState.available_actions || []).includes("fold") && (
+            <div className="your-area-content">
+              {/* Action Buttons */}
+              <div className="action-column">
+                <div className="action-area">
+                  {gameState.game_over ? (
+                    <div style={{ textAlign: "center" }}>
+                      <h2 style={{ color: "#FFD700", marginBottom: "20px" }}>
+                        🏆 {gameState.winner?.name} Wins! 🏆
+                      </h2>
+                      <p style={{ marginBottom: "20px", fontSize: "16px" }}>
+                        Winner takes all {gameState.winner?.chips} chips!
+                      </p>
                       <button
-                        onClick={() => sendAction("fold")}
-                        className="action-button fold"
-                      >
-                        Fold
-                      </button>
-                    )}
-                    {(gameState.available_actions || []).includes("check") && (
-                      <button
-                        onClick={() => sendAction("check")}
-                        className="action-button check"
-                      >
-                        Check
-                      </button>
-                    )}
-                    {(gameState.available_actions || []).includes("call") && (
-                      <button
-                        onClick={() => sendAction("call")}
-                        className="action-button call"
-                      >
-                        Call ${gameState.call_amount || 0}
-                      </button>
-                    )}
-                    {(gameState.available_actions || []).includes("all_in") && (
-                      <button
-                        onClick={() => sendAction("all_in")}
-                        className="action-button all-in"
+                        onClick={resetRoom}
+                        className="action-button reset"
                         style={{
-                          backgroundColor: "#FF9800",
-                          fontWeight: "bold",
+                          backgroundColor: "#2196F3",
+                          fontSize: "18px",
+                          padding: "15px 30px",
                         }}
                       >
-                        All-In (
-                        {gameState.players[gameState.your_index]?.chips || 0})
+                        Reset Room & Play Again
                       </button>
-                    )}
-                    {(gameState.available_actions || []).includes("bet") && (
-                      <div className="bet-controls">
-                        <input
-                          type="number"
-                          value={betAmount}
-                          onChange={(e) => setBetAmount(Number(e.target.value))}
-                          min={gameState.big_blind || 10}
-                          placeholder="Amount"
-                          className="bet-input"
-                        />
-                        <button
-                          onClick={() => sendAction("bet", betAmount)}
-                          className="action-button bet"
-                          disabled={betAmount < (gameState.big_blind || 10)}
-                        >
-                          Bet
-                        </button>
+                    </div>
+                  ) : gameState.hand_over ? (
+                    <button
+                      onClick={nextHand}
+                      className="action-button next-hand"
+                      style={{
+                        backgroundColor: "#4CAF50",
+                        fontSize: "18px",
+                        padding: "15px 30px",
+                      }}
+                    >
+                      Deal Next Hand
+                    </button>
+                  ) : gameState.is_your_turn ? (
+                    <>
+                      <div className="action-stack">
+                        <div className="action-row action-row-top">
+                          {(gameState.available_actions || []).includes(
+                            "fold",
+                          ) && (
+                            <button
+                              onClick={() => sendAction("fold")}
+                              className="action-button fold"
+                            >
+                              Fold
+                            </button>
+                          )}
+                          {(gameState.available_actions || []).includes(
+                            "check",
+                          ) && (
+                            <button
+                              onClick={() => sendAction("check")}
+                              className="action-button check"
+                            >
+                              Check
+                            </button>
+                          )}
+                          {(gameState.available_actions || []).includes(
+                            "call",
+                          ) && (
+                            <button
+                              onClick={() => sendAction("call")}
+                              className="action-button call"
+                            >
+                              Call ${gameState.call_amount || 0}
+                            </button>
+                          )}
+                          {(gameState.available_actions || []).includes(
+                            "all_in",
+                          ) && (
+                            <button
+                              onClick={() => sendAction("all_in")}
+                              className="action-button all-in"
+                              style={{
+                                backgroundColor: "#FF9800",
+                                fontWeight: "bold",
+                              }}
+                            >
+                              All-In (
+                              {gameState.players[gameState.your_index]?.chips ||
+                                0}
+                              )
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="action-row action-row-bottom">
+                          {(gameState.available_actions || []).includes(
+                            "bet",
+                          ) && (
+                            <div className="bet-controls">
+                              <input
+                                type="number"
+                                value={betAmount}
+                                onChange={(e) =>
+                                  setBetAmount(Number(e.target.value))
+                                }
+                                min={gameState.big_blind || 10}
+                                placeholder="Amount"
+                                className="bet-input"
+                              />
+                              <button
+                                onClick={() => sendAction("bet", betAmount)}
+                                className="action-button bet"
+                                disabled={
+                                  betAmount < (gameState.big_blind || 10)
+                                }
+                              >
+                                Bet
+                              </button>
+                            </div>
+                          )}
+                          {(gameState.available_actions || []).includes(
+                            "raise",
+                          ) && (
+                            <div className="bet-controls">
+                              <input
+                                type="number"
+                                value={betAmount}
+                                onChange={(e) =>
+                                  setBetAmount(Number(e.target.value))
+                                }
+                                min={
+                                  (gameState.call_amount || 0) +
+                                  (gameState.big_blind || 10)
+                                }
+                                placeholder="Raise to"
+                                className="bet-input"
+                              />
+                              <button
+                                onClick={() => sendAction("raise", betAmount)}
+                                className="action-button raise"
+                                disabled={
+                                  betAmount <
+                                  (gameState.call_amount || 0) +
+                                    (gameState.big_blind || 10)
+                                }
+                              >
+                                Raise To ${betAmount || 0}
+                              </button>
+                              <div className="raise-cost-readout">
+                                Additional chips to commit: $
+                                {raiseAdditionalCost}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
-                    {(gameState.available_actions || []).includes("raise") && (
-                      <div className="bet-controls">
-                        <input
-                          type="number"
-                          value={betAmount}
-                          onChange={(e) => setBetAmount(Number(e.target.value))}
-                          min={
-                            (gameState.call_amount || 0) +
-                            (gameState.big_blind || 10)
-                          }
-                          placeholder="Amount"
-                          className="bet-input"
-                        />
-                        <button
-                          onClick={() => sendAction("raise", betAmount)}
-                          className="action-button raise"
-                          disabled={
-                            betAmount <
-                            (gameState.call_amount || 0) +
-                              (gameState.big_blind || 10)
-                          }
-                        >
-                          Raise
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="waiting-turn">Waiting for your turn...</div>
-              )}
+                    </>
+                  ) : (
+                    <div className="waiting-turn">Waiting for your turn...</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="your-hand">
+                <h3>Your Hand</h3>
+                <div className="hand-cards">
+                  {(gameState.your_hand || []).map((card, idx) => (
+                    <div
+                      key={idx}
+                      className={`card large ${getSuitColor(card.suit)}`}
+                    >
+                      <div className="card-value">{card.display}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <aside className="bet-tracker" aria-label="Bet tracker">
+                <h3>Bet Tracker</h3>
+                <div className="bet-tracker-header">
+                  <span>Player</span>
+                  <span>Round</span>
+                  <span>Hand</span>
+                </div>
+                <div className="bet-tracker-list">
+                  {gameState.players.map((player, idx) => (
+                    <div
+                      key={player.player_id}
+                      className={`bet-tracker-row ${
+                        idx === gameState.your_index ? "you" : ""
+                      }`}
+                    >
+                      <span className="tracker-player-name">{player.name}</span>
+                      <span>
+                        $
+                        {roundBetByPlayerId[player.player_id] ??
+                          player.current_bet_in_round ??
+                          0}
+                      </span>
+                      <span>${player.total_bet_in_hand || 0}</span>
+                    </div>
+                  ))}
+                  {gameState.players.length === 0 && (
+                    <div className="bet-tracker-empty">No players yet</div>
+                  )}
+                </div>
+              </aside>
             </div>
           </div>
         </div>

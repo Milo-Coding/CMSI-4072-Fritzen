@@ -162,10 +162,34 @@
   background: linear-gradient(135deg, #3a2a1a 0%, #2a1a0a 100%);
 }
 
+.player-card.hand-winner {
+  border-color: #ffd700;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.35);
+}
+
+.player-name-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .player-name {
   font-weight: bold;
   margin-bottom: 0.5rem;
   color: #f0f0f0;
+}
+
+.player-winner-badge {
+  background: rgba(255, 215, 0, 0.2);
+  color: #ffd700;
+  border: 1px solid rgba(255, 215, 0, 0.65);
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .player-chips {
@@ -184,6 +208,20 @@
 .player-cards {
   color: #bbb;
   font-size: 0.85rem;
+  min-height: 1.2rem;
+}
+
+.player-showdown-cards {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.45rem;
+}
+
+.player-showdown-rank {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #8de88f;
 }
 
 .player-status {
@@ -207,8 +245,28 @@
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
 }
 
+.your-area-content {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.action-column {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
 .your-hand {
-  margin-bottom: 2rem;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  justify-self: stretch;
+  text-align: center;
 }
 
 .your-hand h3 {
@@ -244,6 +302,13 @@
   font-size: 1.5rem;
 }
 
+.card.tiny {
+  min-width: 40px;
+  min-height: 56px;
+  padding: 0.45rem;
+  font-size: 0.72rem;
+}
+
 .card.red {
   color: #d32f2f;
 }
@@ -261,7 +326,8 @@
   min-height: 80px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  width: 100%;
 }
 
 .hand-over-summary {
@@ -292,6 +358,22 @@
   gap: 1rem;
   justify-content: center;
   align-items: center;
+}
+
+.action-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  width: 100%;
+  align-items: flex-start;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+  justify-content: flex-start;
 }
 
 .action-button {
@@ -358,6 +440,16 @@
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.raise-cost-readout {
+  width: 100%;
+  color: #ffd700;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
 }
 
 .bet-input {
@@ -392,88 +484,11 @@
   text-align: center;
 }
 
-/* Showdown Display */
-.showdown-display {
-  margin-top: 2rem;
-  padding: 1.5rem;
-  background: rgba(255, 215, 0, 0.1);
-  border: 2px solid #ffd700;
-  border-radius: 12px;
-}
-
-.showdown-display h3 {
-  text-align: center;
-  color: #ffd700;
-  margin-top: 0;
-  font-size: 1.5rem;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-}
-
-.showdown-hands {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.showdown-hand {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  border: 2px solid transparent;
-}
-
-.showdown-hand.winner {
-  background: rgba(255, 215, 0, 0.2);
-  border-color: #ffd700;
-}
-
-.showdown-player {
-  min-width: 120px;
-  font-weight: bold;
-  color: #f0f0f0;
-}
-
-.showdown-cards {
-  display: flex;
-  gap: 0.5rem;
-  flex: 1;
-}
-
-.card.small {
-  width: 50px;
-  height: 70px;
-  font-size: 0.8rem;
-}
-
-.showdown-rank {
-  min-width: 150px;
-  text-align: right;
-  color: #4caf50;
-  font-weight: bold;
-  font-size: 1.1rem;
-}
-
-.showdown-hand.winner .showdown-rank {
-  color: #ffd700;
-}
-
-.showdown-no-cards {
-  color: rgba(255, 255, 255, 0.75);
-  font-style: italic;
-  font-size: 0.95rem;
-}
-
-.showdown-rank.fold-win-text {
-  color: #ffd700;
-}
-
 /* Action Log */
 .game-main {
   display: flex;
   gap: 1.5rem;
+  align-items: flex-start;
 }
 
 .game-main .community-area {
@@ -482,12 +497,14 @@
 
 .action-log {
   width: 280px;
-  max-height: 500px;
+  max-height: 380px;
   background: rgba(30, 30, 30, 0.95);
   border: 2px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
   padding: 1rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
 }
 
 .action-log h3 {
@@ -500,7 +517,9 @@
 }
 
 .log-entries {
-  max-height: 420px;
+  max-height: none;
+  min-height: 0;
+  flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -717,4 +736,87 @@
 .lobby-actions .primary-button {
   width: auto;
   margin-top: 0;
+}
+
+/* Bet Tracker */
+.bet-tracker {
+  width: 100%;
+  background: rgba(18, 18, 18, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.bet-tracker h3 {
+  margin: 0 0 0.75rem;
+  color: #f0f0f0;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+}
+
+.bet-tracker-header,
+.bet-tracker-row {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.bet-tracker-header {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.bet-tracker-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.4rem;
+}
+
+.bet-tracker-row {
+  color: #d8d8d8;
+  font-size: 0.9rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bet-tracker-row.you {
+  color: #fff;
+  background: rgba(76, 175, 80, 0.18);
+  border-radius: 6px;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+.tracker-player-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bet-tracker-empty {
+  color: rgba(255, 255, 255, 0.55);
+  font-style: italic;
+  padding: 0.75rem 0;
+}
+
+@media (max-width: 980px) {
+  .your-area-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .action-area {
+    width: 100%;
+  }
+
+  .bet-tracker {
+    width: 100%;
+  }
 }
