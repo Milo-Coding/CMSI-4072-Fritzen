@@ -64,6 +64,7 @@ interface Room {
   max_players: number;
   is_active: boolean;
   phase: string;
+  host_player_id?: string | null;
   small_blind: number;
   big_blind: number;
   pot: number;
@@ -77,6 +78,7 @@ interface GameRoomProps {
 }
 
 const WS_BASE = "ws://localhost:8000";
+const API_BASE = "http://localhost:8000/api";
 
 function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
   const [connected, setConnected] = useState(false);
@@ -85,6 +87,14 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
   const [error, setError] = useState<string | null>(null);
   const [betAmount, setBetAmount] = useState(0);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
+  const [selectedAiType, setSelectedAiType] = useState<"random" | "dqn">(
+    "random",
+  );
+  const [dqnModelPath, setDqnModelPath] = useState("");
+  const [availableModels, setAvailableModels] = useState<
+    { name: string; path: string }[]
+  >([]);
+  const [loadingModels, setLoadingModels] = useState(false);
   const [communityAreaHeight, setCommunityAreaHeight] = useState<number | null>(
     null,
   );
@@ -123,6 +133,52 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
 
     return () => observer.disconnect();
   }, [room?.is_active]);
+
+  useEffect(() => {
+    if (
+      room?.is_active ||
+      selectedAiType !== "dqn" ||
+      availableModels.length > 0
+    ) {
+      return;
+    }
+
+    let isCancelled = false;
+    setLoadingModels(true);
+
+    fetch(`${API_BASE}/models`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Failed to load DQN models");
+        }
+        return response.json();
+      })
+      .then((data) => {
+        if (isCancelled) {
+          return;
+        }
+
+        const models = data.models || [];
+        setAvailableModels(models);
+        if (models.length > 0) {
+          setDqnModelPath(models[0].path);
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setAvailableModels([]);
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setLoadingModels(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [room?.is_active, selectedAiType, availableModels.length]);
 
   const connectWebSocket = () => {
     const wsUrl = `${WS_BASE}/ws/game/${roomId}?player_name=${encodeURIComponent(
@@ -251,7 +307,25 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
       setError("Not connected to server");
       return;
     }
-    ws.current.send(JSON.stringify({ type: "add_ai", data: {} }));
+
+    if (selectedAiType === "dqn" && !dqnModelPath.trim()) {
+      setError("Please select a DQN model before adding a DQN agent.");
+      return;
+    }
+
+    setError(null);
+
+    ws.current.send(
+      JSON.stringify({
+        type: "add_ai",
+        data: {
+          ai_type: selectedAiType,
+          ...(selectedAiType === "dqn" && dqnModelPath
+            ? { dqn_model_path: dqnModelPath }
+            : {}),
+        },
+      }),
+    );
   };
 
   const removePlayer = (targetPlayerId: string) => {
@@ -263,6 +337,35 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
       JSON.stringify({
         type: "remove_player",
         data: { player_id: targetPlayerId },
+      }),
+    );
+  };
+
+  const renameAIPlayer = (targetPlayerId: string, currentName: string) => {
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+      setError("Not connected to server");
+      return;
+    }
+
+    const newName = window.prompt("Rename AI player", currentName);
+    if (newName === null) {
+      return;
+    }
+
+    const trimmedName = newName.trim();
+    if (!trimmedName) {
+      setError("AI name cannot be empty.");
+      return;
+    }
+
+    setError(null);
+    ws.current.send(
+      JSON.stringify({
+        type: "rename_ai",
+        data: {
+          player_id: targetPlayerId,
+          new_name: trimmedName,
+        },
       }),
     );
   };
@@ -360,6 +463,8 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
 
     return totals;
   })();
+  const isHost = Boolean(myPlayerId && room?.host_player_id === myPlayerId);
+
   if (!connected) {
     return (
       <div className="game-room">
@@ -390,7 +495,20 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
                 }`}
               >
                 <div className="seat-icon">{player.is_agent ? "🤖" : "👤"}</div>
-                <div className="seat-name">{player.name}</div>
+                {player.is_agent && isHost ? (
+                  <button
+                    type="button"
+                    className="seat-name seat-name-button"
+                    onClick={() =>
+                      renameAIPlayer(player.player_id, player.name)
+                    }
+                    title="Rename AI player"
+                  >
+                    {player.name}
+                  </button>
+                ) : (
+                  <div className="seat-name">{player.name}</div>
+                )}
                 <div className="seat-type">
                   {player.is_agent ? "AI" : "Human"}
                 </div>
@@ -418,12 +536,70 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
           </div>
 
           <div className="lobby-actions">
-            {(room?.player_count || 0) < (room?.max_players || 0) && (
-              <button onClick={addAI} className="secondary-button">
+            {isHost && (
+              <div className="ai-controls">
+                <div className="ai-control-group">
+                  <label htmlFor="ai-type-select" className="ai-control-label">
+                    AI Type
+                  </label>
+                  <select
+                    id="ai-type-select"
+                    className="ai-control-select"
+                    value={selectedAiType}
+                    onChange={(e) =>
+                      setSelectedAiType(e.target.value as "random" | "dqn")
+                    }
+                  >
+                    <option value="random">Random</option>
+                    <option value="dqn">DQN (Trained)</option>
+                  </select>
+                </div>
+
+                {selectedAiType === "dqn" && (
+                  <div className="ai-control-group">
+                    <label
+                      htmlFor="dqn-model-select"
+                      className="ai-control-label"
+                    >
+                      DQN Model
+                    </label>
+                    <select
+                      id="dqn-model-select"
+                      className="ai-control-select"
+                      value={dqnModelPath}
+                      onChange={(e) => setDqnModelPath(e.target.value)}
+                      disabled={loadingModels || availableModels.length === 0}
+                    >
+                      {loadingModels ? (
+                        <option value="">Loading models...</option>
+                      ) : availableModels.length === 0 ? (
+                        <option value="">No models found</option>
+                      ) : (
+                        availableModels.map((model) => (
+                          <option key={model.path} value={model.path}>
+                            {model.name}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isHost && (room?.player_count || 0) < (room?.max_players || 0) && (
+              <button
+                onClick={addAI}
+                className="secondary-button"
+                disabled={
+                  selectedAiType === "dqn" &&
+                  (loadingModels || availableModels.length === 0)
+                }
+              >
                 + Add AI Player
               </button>
             )}
-            {(room?.player_count || 0) >= 2 && (
+            {isHost && (room?.player_count || 0) >= 2 && (
               <button onClick={startGame} className="primary-button">
                 Start Game
               </button>
@@ -431,8 +607,9 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
           </div>
 
           <p className="lobby-hint">
-            Empty seats will be automatically filled with AI when the game
-            starts.
+            {isHost
+              ? "Click an AI name to rename it. Empty seats stay empty when the game starts."
+              : "Only the room host can add AI players, rename AI names, and start the game."}
           </p>
         </div>
       )}

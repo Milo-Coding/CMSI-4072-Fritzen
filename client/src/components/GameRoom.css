@@ -675,6 +675,20 @@
   text-overflow: ellipsis;
 }
 
+.seat-name-button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 0.15rem;
+}
+
+.seat-name-button:hover {
+  color: #93c5fd;
+}
+
 .seat-type {
   font-size: 0.7rem;
   color: #a0aec0;
@@ -716,6 +730,49 @@
   justify-content: center;
   flex-wrap: wrap;
   margin: 1.5rem 0 0.75rem;
+}
+
+.ai-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.ai-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 170px;
+  text-align: left;
+}
+
+.ai-control-label {
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ai-control-select {
+  background: #1f2937;
+  color: #f8fafc;
+  border: 1px solid #4a5568;
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  font-size: 0.9rem;
+}
+
+.ai-control-select:focus {
+  outline: none;
+  border-color: #60a5fa;
+}
+
+.ai-control-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .lobby-hint {
@@ -935,6 +992,15 @@
   .room-info {
     flex-wrap: wrap;
     row-gap: 0.35rem;
+  }
+
+  .ai-controls {
+    width: 100%;
+  }
+
+  .ai-control-group {
+    min-width: 140px;
+    flex: 1;
   }
 
   .game-main {

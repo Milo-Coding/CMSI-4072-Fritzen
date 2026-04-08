@@ -11,9 +11,12 @@ import json
 from typing import Dict, Any
 from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from pydantic import ValidationError
 
 from ..managers import RoomManager, PlayerManager
 from ..models.schemas import (
+    AddAIRequest,
+    RenameAIRequest,
     WSMessageType,
     WSMessage,
     WSPlayerAction,
@@ -39,6 +42,26 @@ class ConnectionManager:
         """Initialize with manager instances."""
         self.room_manager = room_manager
         self.player_manager = player_manager
+
+    async def _require_host(
+        self,
+        websocket: WebSocket,
+        room_id: str,
+        player_id: str,
+    ) -> bool:
+        """Ensure the player is the host for host-only lobby actions."""
+        room = self.room_manager.get_room(room_id)
+        if not room:
+            await self.send_error(websocket, "ROOM_NOT_FOUND", "Room not found")
+            return False
+        if room.host_player_id != player_id:
+            await self.send_error(
+                websocket,
+                "FORBIDDEN",
+                "Only the room host can perform this action",
+            )
+            return False
+        return True
     
     async def connect(self, websocket: WebSocket, player_name: str) -> str:
         """
@@ -202,6 +225,9 @@ class ConnectionManager:
         if not session or not session.current_room:
             await self.send_error(websocket, "NOT_IN_ROOM", "Not in a room")
             return
+
+        if not await self._require_host(websocket, session.current_room, player_id):
+            return
         
         if not self.room_manager.start_game(session.current_room):
             await self.send_error(websocket, "START_FAILED", "Cannot start game")
@@ -238,16 +264,70 @@ class ConnectionManager:
         # Broadcast the updated state
         await self.broadcast_game_state(session.current_room)
 
-    async def handle_add_ai(self, websocket: WebSocket, player_id: str):
+    async def handle_add_ai(self, websocket: WebSocket, player_id: str, data: dict):
         """Handle request to add an AI player to the lobby."""
         session = self.player_manager.get_session(player_id)
         if not session or not session.current_room:
             await self.send_error(websocket, "NOT_IN_ROOM", "Not in a room")
             return
 
-        room = self.room_manager.add_ai_player(session.current_room)
+        if not await self._require_host(websocket, session.current_room, player_id):
+            return
+
+        try:
+            add_ai_request = AddAIRequest(**(data or {}))
+        except ValidationError as e:
+            await self.send_error(websocket, "INVALID_REQUEST", str(e))
+            return
+
+        try:
+            room = self.room_manager.add_ai_player(
+                session.current_room,
+                ai_type=add_ai_request.ai_type,
+                dqn_model_path=add_ai_request.dqn_model_path,
+            )
+        except ValueError as e:
+            await self.send_error(websocket, "ADD_AI_FAILED", str(e))
+            return
+
         if not room:
             await self.send_error(websocket, "ADD_AI_FAILED", "Cannot add AI player (room may be full or game already started)")
+            return
+
+        await self.broadcast_game_state(session.current_room)
+
+    async def handle_rename_ai(self, websocket: WebSocket, player_id: str, data: dict):
+        """Handle request to rename an AI player in the lobby."""
+        session = self.player_manager.get_session(player_id)
+        if not session or not session.current_room:
+            await self.send_error(websocket, "NOT_IN_ROOM", "Not in a room")
+            return
+
+        if not await self._require_host(websocket, session.current_room, player_id):
+            return
+
+        try:
+            rename_request = RenameAIRequest(**(data or {}))
+        except ValidationError as e:
+            await self.send_error(websocket, "INVALID_REQUEST", str(e))
+            return
+
+        try:
+            room = self.room_manager.rename_ai_player(
+                session.current_room,
+                target_player_id=rename_request.player_id,
+                new_name=rename_request.new_name,
+            )
+        except ValueError as e:
+            await self.send_error(websocket, "RENAME_AI_FAILED", str(e))
+            return
+
+        if not room:
+            await self.send_error(
+                websocket,
+                "RENAME_AI_FAILED",
+                "Cannot rename AI player (game may already be started)",
+            )
             return
 
         await self.broadcast_game_state(session.current_room)
@@ -371,7 +451,10 @@ async def game_websocket(
                 await manager.handle_reset_room(websocket, player_id)
 
             elif message_type == WSMessageType.ADD_AI.value:
-                await manager.handle_add_ai(websocket, player_id)
+                await manager.handle_add_ai(websocket, player_id, message_data)
+
+            elif message_type == WSMessageType.RENAME_AI.value:
+                await manager.handle_rename_ai(websocket, player_id, message_data)
 
             elif message_type == WSMessageType.REMOVE_PLAYER.value:
                 await manager.handle_remove_player(websocket, player_id, message_data)
@@ -430,7 +513,10 @@ async def game_room_websocket(
                 await manager.handle_reset_room(websocket, player_id)
 
             elif message_type == WSMessageType.ADD_AI.value:
-                await manager.handle_add_ai(websocket, player_id)
+                await manager.handle_add_ai(websocket, player_id, message_data)
+
+            elif message_type == WSMessageType.RENAME_AI.value:
+                await manager.handle_rename_ai(websocket, player_id, message_data)
 
             elif message_type == WSMessageType.REMOVE_PLAYER.value:
                 await manager.handle_remove_player(websocket, player_id, message_data)

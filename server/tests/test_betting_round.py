@@ -260,19 +260,15 @@ class TestBankruptHumanDoesNotFreezeGame:
           - 4 AI players that each have chips
         The human is registered as a non-agent Player so the room manager
         would previously pause to wait for their action.
-        max_players is set to exactly 5 to prevent start_game from auto-filling
-        extra seats (which would change the expected chip total).
+        empty seats are left empty when the game starts.
         """
         manager = RoomManager()
         config = RoomConfig(
             name="test-room",
-            max_players=5,
             min_players=2,
             small_blind=10,
             big_blind=20,
             starting_chips=200,
-            ai_players=0,
-            ai_type="random",
         )
         room = manager.create_room(config)
 
@@ -281,7 +277,7 @@ class TestBankruptHumanDoesNotFreezeGame:
         room.players.append(human)
         manager._player_rooms["human-broke"] = room.id
 
-        # Add 4 AI players with chips (fills the room to max_players=5)
+        # Add 4 AI players with chips (keeps one empty seat in a 6-seat room)
         for i in range(4):
             ai = AgentRegistry.create(
                 "random",
@@ -367,15 +363,15 @@ class TestLobbyAiIdentity:
         manager = RoomManager()
         config = RoomConfig(
             name="ai-id-regression",
-            max_players=5,
             min_players=2,
             small_blind=10,
             big_blind=20,
             starting_chips=200,
-            ai_players=2,
-            ai_type="random",
         )
         room = manager.create_room(config)
+
+        manager.add_ai_player(room.id, ai_type="random")
+        manager.add_ai_player(room.id, ai_type="random")
 
         ai_ids_before = [
             p.player_id for p in room.players if isinstance(p, BaseAgent)
@@ -387,7 +383,7 @@ class TestLobbyAiIdentity:
         removed_id = ai_ids_before[0]
         manager.remove_player_from_lobby(room.id, removed_id)
 
-        updated_room = manager.add_ai_player(room.id)
+        updated_room = manager.add_ai_player(room.id, ai_type="random")
         assert updated_room is not None
 
         ai_ids_after = [
@@ -405,15 +401,14 @@ class TestRoomStuckFallback:
         manager = RoomManager()
         config = RoomConfig(
             name="stuck-room-regression",
-            max_players=2,
             min_players=2,
             small_blind=10,
             big_blind=20,
             starting_chips=200,
-            ai_players=2,
-            ai_type="random",
         )
         room = manager.create_room(config)
+        manager.add_ai_player(room.id, ai_type="random")
+        manager.add_ai_player(room.id, ai_type="random")
         room.is_active = True
         room.game = Game(
             players=room.players,
@@ -445,6 +440,102 @@ class TestRoomStuckFallback:
             "Fallback Triggered" in entry.get("action", "")
             for entry in room.game.action_log
         ), "Fallback marker should be appended to action log"
+
+
+class TestRoomConfigAndStartBehavior:
+    """Regression tests for fixed-size rooms and no start-time auto-fill."""
+
+    def test_rooms_always_use_six_seats(self):
+        manager = RoomManager()
+        room = manager.create_room(
+            RoomConfig(
+                name="fixed-six",
+                min_players=2,
+                small_blind=10,
+                big_blind=20,
+                starting_chips=500,
+            )
+        )
+
+        assert room.config.max_players == 6
+        assert room.to_dict()["max_players"] == 6
+
+    def test_start_game_does_not_auto_fill_empty_seats(self):
+        manager = RoomManager()
+        room = manager.create_room(
+            RoomConfig(
+                name="no-autofill",
+                min_players=2,
+                small_blind=10,
+                big_blind=20,
+                starting_chips=300,
+            )
+        )
+
+        room.players.append(Player(chips=300, name="Human-1", player_id="h1"))
+        room.players.append(Player(chips=300, name="Human-2", player_id="h2"))
+        before_start_count = room.player_count
+
+        assert manager.start_game(room.id) is True
+        assert room.player_count == before_start_count
+
+
+class TestHostAndAiRenameBehavior:
+    """Tests for host ownership and AI rename support."""
+
+    def test_first_human_join_becomes_host(self):
+        manager = RoomManager()
+        room = manager.create_room(
+            RoomConfig(name="host-room", min_players=2, starting_chips=500)
+        )
+
+        p1 = Player(chips=500, name="Host", player_id="p-host")
+        p2 = Player(chips=500, name="Guest", player_id="p-guest")
+        manager.join_room(room.id, p1)
+        manager.join_room(room.id, p2)
+
+        assert room.host_player_id == "p-host"
+
+    def test_host_transfers_when_host_leaves(self):
+        manager = RoomManager()
+        room = manager.create_room(
+            RoomConfig(name="host-transfer", min_players=2, starting_chips=500)
+        )
+
+        p1 = Player(chips=500, name="Host", player_id="p-host")
+        p2 = Player(chips=500, name="Guest", player_id="p-guest")
+        manager.join_room(room.id, p1)
+        manager.join_room(room.id, p2)
+
+        manager.leave_room("p-host")
+        assert room.host_player_id == "p-guest"
+
+    def test_can_rename_ai_player_in_lobby(self):
+        manager = RoomManager()
+        room = manager.create_room(
+            RoomConfig(name="rename-ai", min_players=2, starting_chips=500)
+        )
+        manager.add_ai_player(room.id, ai_type="random")
+        ai_player = next(p for p in room.players if isinstance(p, BaseAgent))
+
+        updated_room = manager.rename_ai_player(room.id, ai_player.player_id, "DealerBot")
+
+        assert updated_room is not None
+        renamed_ai = next(p for p in room.players if p.player_id == ai_player.player_id)
+        assert renamed_ai.name == "DealerBot"
+
+    def test_rename_ai_rejects_duplicate_name(self):
+        manager = RoomManager()
+        room = manager.create_room(
+            RoomConfig(name="rename-ai-duplicate", min_players=2, starting_chips=500)
+        )
+        manager.add_ai_player(room.id, ai_type="random")
+        manager.add_ai_player(room.id, ai_type="random")
+        ai_players = [p for p in room.players if isinstance(p, BaseAgent)]
+        assert len(ai_players) == 2
+
+        with pytest.raises(ValueError, match="already exists"):
+            manager.rename_ai_player(room.id, ai_players[0].player_id, ai_players[1].name)
 
 
 if __name__ == "__main__":

@@ -30,6 +30,7 @@ class Room:
     game: Optional[Game] = None
     players: List[Player] = field(default_factory=list)
     is_active: bool = False
+    host_player_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
     current_player_index: Optional[int] = None  # Track whose turn it is
     
@@ -63,6 +64,7 @@ class Room:
             "max_players": self.config.max_players,
             "is_active": self.is_active,
             "phase": self.phase,
+            "host_player_id": self.host_player_id,
             "small_blind": self.config.small_blind,
             "big_blind": self.config.big_blind or self.config.small_blind * 2,
             "pot": self.game.pot if self.game else 0,
@@ -230,25 +232,15 @@ class RoomManager:
             config=config
         )
         
-        # Add AI players if requested
-        for _ in range(config.ai_players):
-            try:
-                ai_name, ai_player_id = self._generate_unique_ai_identity(room)
-                ai_player = AgentRegistry.create(
-                    config.ai_type,
-                    name=ai_name,
-                    chips=config.starting_chips,
-                    player_id=ai_player_id,
-                    model_load_path=config.dqn_model_path if config.ai_type == "dqn" else None
-                )
-                room.players.append(ai_player)
-            except ValueError as e:
-                print(f"Warning: Could not create AI player: {e}")
-        
         self._rooms[room_id] = room
         return room
-    
-    def add_ai_player(self, room_id: str) -> Optional[Room]:
+
+    def add_ai_player(
+        self,
+        room_id: str,
+        ai_type: str,
+        dqn_model_path: Optional[str] = None,
+    ) -> Optional[Room]:
         """
         Add a single AI player to a room (pre-game only).
 
@@ -259,20 +251,16 @@ class RoomManager:
         if not room or room.is_active or room.is_full:
             return None
 
-        try:
-            ai_name, ai_player_id = self._generate_unique_ai_identity(room)
-            ai_player = AgentRegistry.create(
-                room.config.ai_type,
-                name=ai_name,
-                chips=room.config.starting_chips,
-                player_id=ai_player_id,
-                model_load_path=room.config.dqn_model_path if room.config.ai_type == "dqn" else None
-            )
-            room.players.append(ai_player)
-            return room
-        except ValueError as e:
-            print(f"Warning: Could not create AI player: {e}")
-            return None
+        ai_name, ai_player_id = self._generate_unique_ai_identity(room)
+        ai_player = AgentRegistry.create(
+            ai_type,
+            name=ai_name,
+            chips=room.config.starting_chips,
+            player_id=ai_player_id,
+            model_load_path=dqn_model_path if ai_type == "dqn" else None,
+        )
+        room.players.append(ai_player)
+        return room
 
     def remove_player_from_lobby(self, room_id: str, target_player_id: str) -> Optional[Room]:
         """
@@ -290,6 +278,47 @@ class RoomManager:
             del self._player_rooms[target_player_id]
 
         room.players = [p for p in room.players if p.player_id != target_player_id]
+
+        if room.host_player_id == target_player_id:
+            remaining_humans = [
+                p for p in room.players if not isinstance(p, BaseAgent)
+            ]
+            room.host_player_id = (
+                remaining_humans[0].player_id if remaining_humans else None
+            )
+
+        return room
+
+    def rename_ai_player(
+        self,
+        room_id: str,
+        target_player_id: str,
+        new_name: str,
+    ) -> Optional[Room]:
+        """Rename an AI player in the lobby."""
+        room = self.get_room(room_id)
+        if not room or room.is_active:
+            return None
+
+        target_player = next(
+            (p for p in room.players if p.player_id == target_player_id),
+            None,
+        )
+        if not target_player or not isinstance(target_player, BaseAgent):
+            raise ValueError("Target player is not an AI player")
+
+        normalized_name = new_name.strip()
+        if not normalized_name:
+            raise ValueError("AI name cannot be empty")
+
+        for player in room.players:
+            if (
+                player.player_id != target_player_id
+                and player.name.strip().lower() == normalized_name.lower()
+            ):
+                raise ValueError("A player with that name already exists")
+
+        target_player.name = normalized_name
         return room
 
     def get_room(self, room_id: str) -> Optional[Room]:
@@ -353,6 +382,9 @@ class RoomManager:
         
         room.players.append(player)
         self._player_rooms[player.player_id] = room_id
+
+        if room.host_player_id is None:
+            room.host_player_id = player.player_id
         
         return room
     
@@ -378,6 +410,14 @@ class RoomManager:
         # Find and remove player
         room.players = [p for p in room.players if p.player_id != player_id]
         del self._player_rooms[player_id]
+
+        if room.host_player_id == player_id:
+            remaining_humans = [
+                p for p in room.players if not isinstance(p, BaseAgent)
+            ]
+            room.host_player_id = (
+                remaining_humans[0].player_id if remaining_humans else None
+            )
         
         # Delete room if empty (except AI players)
         human_players = [p for p in room.players if not isinstance(p, BaseAgent)]
@@ -409,22 +449,6 @@ class RoomManager:
         
         if not room.can_start:
             return False
-
-        # Auto-fill remaining empty seats with AI players
-        empty_seats = room.config.max_players - room.player_count
-        ai_count = sum(1 for p in room.players if isinstance(p, BaseAgent))
-        for i in range(empty_seats):
-            try:
-                ai_player = AgentRegistry.create(
-                    room.config.ai_type,
-                    name=f"Bot-{ai_count + i + 1}",
-                    chips=room.config.starting_chips,
-                    player_id=f"ai-{room_id}-fill-{i}",
-                    model_load_path=room.config.dqn_model_path if room.config.ai_type == "dqn" else None
-                )
-                room.players.append(ai_player)
-            except ValueError as e:
-                print(f"Warning: Could not auto-fill AI player: {e}")
 
         # Create game instance
         room.game = Game(

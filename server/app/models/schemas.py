@@ -140,15 +140,13 @@ class PlayerActionResult(BaseModel):
 
 class RoomConfig(BaseModel):
     """Configuration for creating a new room."""
+    model_config = ConfigDict(extra="forbid")
+
     name: Optional[str] = Field(None, description="Room display name")
     small_blind: int = Field(10, ge=1)
     big_blind: Optional[int] = Field(None, ge=1, description="Defaults to 2x small blind")
-    min_players: int = Field(2, ge=2, le=12)
-    max_players: int = Field(6, ge=2, le=12)
+    min_players: int = Field(2, ge=2, le=6)
     starting_chips: int = Field(1000, ge=100)
-    ai_players: int = Field(0, ge=0, le=11, description="Number of AI players to add")
-    ai_type: str = Field("random", description="Type of AI agent: random, dqn")
-    dqn_model_path: Optional[str] = Field(None, description="Path to .pth model file for DQN agents")
     
     @field_validator('big_blind')
     @classmethod
@@ -157,13 +155,55 @@ class RoomConfig(BaseModel):
             return info.data.get('small_blind', 10) * 2
         return v
 
-    @field_validator('max_players')
+    @property
+    def max_players(self) -> int:
+        """All rooms are fixed to six seats."""
+        return 6
+
+
+class AddAIRequest(BaseModel):
+    """Payload for adding an AI player while in the lobby."""
+    ai_type: str = Field(..., description="Type of AI agent: random, dqn")
+    dqn_model_path: Optional[str] = Field(
+        None,
+        description="Path to .pth model file when ai_type is dqn",
+    )
+
+    @field_validator("ai_type")
     @classmethod
-    def validate_max_players(cls, v: int, info: ValidationInfo) -> int:
-        min_players = info.data.get('min_players', 2)
-        if v < min_players:
-            raise ValueError('max_players must be >= min_players')
+    def validate_ai_type(cls, v: str) -> str:
+        normalized = v.strip().lower()
+        if normalized not in {"random", "dqn"}:
+            raise ValueError("ai_type must be one of: random, dqn")
+        return normalized
+
+    @field_validator("dqn_model_path")
+    @classmethod
+    def validate_dqn_model_path(
+        cls,
+        v: Optional[str],
+        info: ValidationInfo,
+    ) -> Optional[str]:
+        ai_type = info.data.get("ai_type")
+        if ai_type == "dqn":
+            if v is None or not v.strip():
+                raise ValueError("dqn_model_path is required when ai_type is dqn")
+            return v.strip()
         return v
+
+
+class RenameAIRequest(BaseModel):
+    """Payload for renaming an AI player while in the lobby."""
+    player_id: str = Field(..., min_length=1)
+    new_name: str = Field(..., min_length=1, max_length=32)
+
+    @field_validator("new_name")
+    @classmethod
+    def validate_new_name(cls, v: str) -> str:
+        normalized = v.strip()
+        if not normalized:
+            raise ValueError("new_name cannot be empty")
+        return normalized
 
 
 class RoomModel(BaseModel):
@@ -174,6 +214,7 @@ class RoomModel(BaseModel):
     max_players: int = Field(6, ge=2)
     is_active: bool = False
     phase: str = "waiting"
+    host_player_id: Optional[str] = None
     small_blind: int = Field(10, ge=1)
     big_blind: int = Field(20, ge=1)
     pot: int = Field(0, ge=0)
@@ -200,6 +241,7 @@ class WSMessageType(str, Enum):
     RESET_ROOM = "reset_room"
     CHAT = "chat"
     ADD_AI = "add_ai"
+    RENAME_AI = "rename_ai"
     REMOVE_PLAYER = "remove_player"
     
     # Server -> Client

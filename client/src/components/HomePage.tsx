@@ -16,11 +16,7 @@ interface RoomConfig {
   small_blind: number;
   big_blind?: number;
   min_players: number;
-  max_players: number;
   starting_chips: number;
-  ai_players: number;
-  ai_type: string;
-  dqn_model_path?: string;
 }
 
 const API_BASE = "http://localhost:8000/api";
@@ -40,33 +36,13 @@ function HomePage({ onJoinRoom }: HomePageProps) {
   const [roomName, setRoomName] = useState("");
   const [smallBlind, setSmallBlind] = useState(10);
   const [bigBlind, setBigBlind] = useState(20);
-  const [maxPlayers, setMaxPlayers] = useState(6);
   const [startingChips, setStartingChips] = useState(1000);
-  const [aiType, setAiType] = useState("random");
-  const [dqnModelPath, setDqnModelPath] = useState("");
-  const [availableModels, setAvailableModels] = useState<
-    { name: string; path: string }[]
-  >([]);
 
   useEffect(() => {
     if (view === "browse") {
       fetchRooms();
     }
   }, [view]);
-
-  useEffect(() => {
-    if (aiType === "dqn" && availableModels.length === 0) {
-      fetch(`${API_BASE}/models`)
-        .then((r) => r.json())
-        .then((data) => {
-          setAvailableModels(data.models || []);
-          if (data.models?.length > 0) {
-            setDqnModelPath(data.models[0].path);
-          }
-        })
-        .catch(() => setAvailableModels([]));
-    }
-  }, [aiType]);
 
   const fetchRooms = async () => {
     setLoading(true);
@@ -97,12 +73,7 @@ function HomePage({ onJoinRoom }: HomePageProps) {
       small_blind: smallBlind,
       big_blind: bigBlind,
       min_players: 2,
-      max_players: maxPlayers,
       starting_chips: startingChips,
-      ai_players: 0,
-      ai_type: aiType,
-      dqn_model_path:
-        aiType === "dqn" && dqnModelPath ? dqnModelPath : undefined,
     };
 
     try {
@@ -194,18 +165,6 @@ function HomePage({ onJoinRoom }: HomePageProps) {
 
           <div className="form-row">
             <div className="form-group">
-              <label htmlFor="max-players">Max Players</label>
-              <input
-                id="max-players"
-                type="number"
-                value={maxPlayers}
-                onChange={(e) => setMaxPlayers(Number(e.target.value))}
-                min="2"
-                max="12"
-              />
-            </div>
-
-            <div className="form-group">
               <label htmlFor="starting-chips">Starting Chips</label>
               <input
                 id="starting-chips"
@@ -218,40 +177,7 @@ function HomePage({ onJoinRoom }: HomePageProps) {
             </div>
           </div>
 
-          <div className="form-group">
-            <label htmlFor="ai-type">AI Type (used to fill empty seats)</label>
-            <select
-              id="ai-type"
-              value={aiType}
-              onChange={(e) => setAiType(e.target.value)}
-            >
-              <option value="random">Random</option>
-              <option value="dqn">DQN (Trained)</option>
-            </select>
-          </div>
-
-          {aiType === "dqn" && (
-            <div className="form-group">
-              <label htmlFor="dqn-model">DQN Model</label>
-              {availableModels.length > 0 ? (
-                <select
-                  id="dqn-model"
-                  value={dqnModelPath}
-                  onChange={(e) => setDqnModelPath(e.target.value)}
-                >
-                  {availableModels.map((m) => (
-                    <option key={m.path} value={m.path}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <p className="form-hint">
-                  No .pth files found in server/models/
-                </p>
-              )}
-            </div>
-          )}
+          <p className="form-hint">All rooms are created with 6 seats.</p>
 
           <button
             onClick={createRoom}
