@@ -78,6 +78,12 @@ class Game:
         self.current_table_bet = 0  # highest bet in current betting round
         self.side_pots: List[Dict[str, Any]] = []  # List of side pots {amount, eligible_players}
         self.action_log: List[Dict[str, Any]] = []  # Track player actions for UI display
+        self.street_action_history: Dict[str, List[Dict[str, Any]]] = {
+            "Pre-Flop": [],
+            "Flop": [],
+            "Turn": [],
+            "River": []
+        }
         self.showdown_hands: List[Dict[str, Any]] = []  # Revealed hands at showdown
         self.showdown_winner_ids: List[str] = []  # Players who won chips in the most recent hand
         
@@ -225,6 +231,12 @@ class Game:
         self.side_pots = []
         self.action_history = []
         self.action_log = []
+        self.street_action_history = {
+            "Pre-Flop": [],
+            "Flop": [],
+            "Turn": [],
+            "River": []
+        }
         self.showdown_hands = []
         self.showdown_winner_ids = []
         
@@ -534,7 +546,12 @@ class Game:
             "opponents_chips": [p.chips for p in self.players if p != player and p.is_playing_round],
             "dealer_index": self.dealer_index,
             "agent_index": self.players.index(player),
-            "players": [p.to_dict(hide_cards=(p != player)) for p in self.players]
+            "players": [p.to_dict(hide_cards=(p != player)) for p in self.players],
+            "street_actions": list(self.street_action_history.get(state_name, [])),
+            "street_action_history": {
+                k: list(v) for k, v in self.street_action_history.items()
+            },
+            "action_history": list(self.action_history)
         }
         
         # Emit event requesting action
@@ -644,9 +661,36 @@ class Game:
             # Unknown action token, fail safe to legal passive action
             self._handle_check(player)
 
+    def _record_player_action(self, player: Player, action: str, amount: Optional[int] = None):
+        """Record a player's action in hand-level and street-level history."""
+        street = self.current_phase.value.replace("_", " ").title().replace("Pre Flop", "Pre-Flop")
+        amount_value = int(amount) if amount is not None else 0
+        action_entry = {
+            "player_id": player.player_id,
+            "player_name": player.name,
+            "action": action,
+            "amount": amount_value,
+            "street": street,
+            "pot": self.pot,
+            "current_table_bet": self.current_table_bet,
+            "timestamp": self.hand_number
+        }
+        self.action_history.append(action_entry)
+        if street in self.street_action_history:
+            self.street_action_history[street].append(action_entry)
+
+        self.action_log.append({
+            "player_id": player.player_id,
+            "player_name": player.name,
+            "action": action,
+            "amount": amount if amount is not None else None,
+            "timestamp": self.hand_number
+        })
+
     def _handle_fold(self, player: Player):
         """Handle fold action."""
         player.do_fold()
+        self._record_player_action(player, "fold", 0)
         self.emit_event(GameEventType.PLAYER_ACTION_TAKEN, {
             "player_id": player.player_id,
             "action": "fold"
@@ -655,6 +699,7 @@ class Game:
     def _handle_check(self, player: Player):
         """Handle check action."""
         if player.do_check(self.current_table_bet):
+            self._record_player_action(player, "check", 0)
             self.emit_event(GameEventType.PLAYER_ACTION_TAKEN, {
                 "player_id": player.player_id,
                 "action": "check"
@@ -667,6 +712,7 @@ class Game:
         """Handle call action."""
         contributed = player.do_call(self.current_table_bet)
         self.pot += contributed
+        self._record_player_action(player, "call", contributed)
         self.emit_event(GameEventType.PLAYER_ACTION_TAKEN, {
             "player_id": player.player_id,
             "action": "call",
@@ -679,6 +725,7 @@ class Game:
         contributed = player.do_bet(amount)
         self.current_table_bet = contributed
         self.pot += contributed
+        self._record_player_action(player, "bet", contributed)
         self.emit_event(GameEventType.PLAYER_ACTION_TAKEN, {
             "player_id": player.player_id,
             "action": "bet",
@@ -692,6 +739,7 @@ class Game:
         if new_wager != -1 and new_wager > self.current_table_bet:
             self.current_table_bet = new_wager
             self.pot += amount_added
+            self._record_player_action(player, "raise", amount_added)
             self.emit_event(GameEventType.PLAYER_ACTION_TAKEN, {
                 "player_id": player.player_id,
                 "action": "raise",
@@ -710,6 +758,8 @@ class Game:
         # If all-in exceeds current table bet, it effectively acts as a raise
         if player.current_bet_in_round > self.current_table_bet:
             self.current_table_bet = player.current_bet_in_round
+
+        self._record_player_action(player, "all_in", contributed)
 
         self.emit_event(GameEventType.PLAYER_ACTION_TAKEN, {
             "player_id": player.player_id,
@@ -1059,6 +1109,7 @@ class Game:
             "active_player_count": len(self._get_active_players()),
             "side_pots": self.side_pots,
             "action_log": self.action_log,
+            "street_action_history": self.street_action_history,
             "showdown_hands": self.showdown_hands,
             "showdown_winner_ids": self.showdown_winner_ids
         }
@@ -1087,6 +1138,7 @@ class Game:
             "active_player_count": len(self._get_active_players()),
             "side_pots": self.side_pots,
             "action_log": self.action_log,
+            "street_action_history": self.street_action_history,
             "showdown_hands": self.showdown_hands,
             "showdown_winner_ids": self.showdown_winner_ids
         }

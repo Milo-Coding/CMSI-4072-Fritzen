@@ -903,7 +903,17 @@ class RoomManager:
             "opponents_chips": [p.chips for p in room.players if p != player and p.is_playing_round],
             "dealer_index": room.game.dealer_index,
             "agent_index": room.players.index(player),
-            "players": [p.to_dict(hide_cards=(p != player)) for p in room.players]
+            "players": [p.to_dict(hide_cards=(p != player)) for p in room.players],
+            "street_actions": list(
+                room.game.street_action_history.get(
+                    str(room.game.current_phase.value).replace("_", " ").title().replace("Pre Flop", "Pre-Flop"),
+                    []
+                )
+            ),
+            "street_action_history": {
+                k: list(v) for k, v in room.game.street_action_history.items()
+            },
+            "action_history": list(room.game.action_history)
         }
         
         # Get AI decision
