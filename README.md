@@ -1,5 +1,8 @@
 TODO: make the readme
 
+### online version
+visit https://pokerface-zeta.vercel.app/ to play online 
+
 ### start a local server:
 
 cd server
