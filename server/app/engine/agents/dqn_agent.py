@@ -14,11 +14,13 @@ Changes from original:
 
 import random
 import math
+from collections import Counter
 from typing import Dict, List, Any, Optional, Union, Tuple
 from pathlib import Path
 
 from .base_agent import BaseAgent, AgentRegistry
 from ..card import Card
+from ..evaluator import evaluate_best_five, HandRank
 
 # PyTorch import with graceful fallback
 try:
@@ -101,7 +103,11 @@ class DQNAgent(BaseAgent):
         "stage", "num_active_opponents", "pair_in_hand", "high_card",
         "suited", "connected", "hand_strength", "pot_odds",
         "stack_to_pot_ratio", "relative_stack_size", "num_community_cards",
-        "position_is_late", "position_is_early"
+        "position_is_late", "position_is_early",
+        "current_hand_rank_norm", "board_relative_strength", "kicker_strength",
+        "flush_draw_strength", "straight_draw_strength", "improvement_probability",
+        "board_danger_score", "opponent_pressure_score", "relative_commitment_gap",
+        "street_opponent_aggression", "street_raise_density", "street_fold_rate"
     ]
     
     def __init__(
@@ -113,7 +119,7 @@ class DQNAgent(BaseAgent):
         is_training: bool = False,
         model_load_path: Optional[str] = None,
         model_save_path: Optional[str] = None,
-        input_size: int = 19,
+        input_size: Optional[int] = None,
         hidden_size: int = 128,
         batch_size: int = 32,
         gamma: float = 0.9,
@@ -152,13 +158,18 @@ class DQNAgent(BaseAgent):
             )
         
         self.is_training = is_training
-        self.input_size = input_size
+        self.input_size = input_size or len(self.DEFAULT_FEATURES)
+        if self.input_size <= len(self.DEFAULT_FEATURES):
+            self.feature_names = self.DEFAULT_FEATURES[:self.input_size]
+        else:
+            extra = [f"reserved_feature_{i}" for i in range(self.input_size - len(self.DEFAULT_FEATURES))]
+            self.feature_names = self.DEFAULT_FEATURES + extra
         self.hidden_size = hidden_size
         self.model_load_path = model_load_path
         self.model_save_path = model_save_path or "./models/dqn_agent.pth"
         
         # Initialize network
-        self.model = PokerNet(input_size, hidden_size)
+        self.model = PokerNet(self.input_size, hidden_size)
         self.optimizer = optim.Adam(self.model.parameters())
         
         # Training hyperparameters
@@ -388,7 +399,150 @@ class DQNAgent(BaseAgent):
     
     def _features_to_list(self, features: Dict[str, float]) -> List[float]:
         """Convert feature dict to ordered list."""
-        return [features.get(f, 0.0) for f in self.DEFAULT_FEATURES]
+        feature_list = [features.get(f, 0.0) for f in self.feature_names]
+        if len(feature_list) < self.input_size:
+            feature_list.extend([0.0] * (self.input_size - len(feature_list)))
+        return feature_list[:self.input_size]
+
+    @staticmethod
+    def _normalize_stage_name(state_name: str) -> str:
+        """Normalize stage names across engine and room-manager formats."""
+        stage = str(state_name or "Pre-Flop").strip().lower().replace("_", "-")
+        mapping = {
+            "pre-flop": "Pre-Flop",
+            "flop": "Flop",
+            "turn": "Turn",
+            "river": "River"
+        }
+        return mapping.get(stage, "Pre-Flop")
+
+    @staticmethod
+    def _cards_from_state(cards: List[Any]) -> List[Card]:
+        """Convert mixed card payloads (Card/dict) into Card objects."""
+        converted: List[Card] = []
+        for card in cards:
+            if isinstance(card, Card):
+                converted.append(card)
+            elif isinstance(card, dict) and "suit" in card and "value" in card:
+                try:
+                    converted.append(Card.from_dict(card))
+                except Exception:
+                    continue
+        return converted
+
+    @staticmethod
+    def _count_longest_run(values: List[int]) -> int:
+        """Return longest consecutive run length in a value set (Ace can be low)."""
+        if not values:
+            return 0
+
+        unique = sorted(set(values))
+        if 14 in unique:
+            unique = sorted(set(unique + [1]))
+
+        longest = 1
+        run = 1
+        for i in range(1, len(unique)):
+            if unique[i] == unique[i - 1] + 1:
+                run += 1
+                longest = max(longest, run)
+            else:
+                run = 1
+        return longest
+
+    def _draw_features(self, hole_cards: List[Card], community_cards: List[Card]) -> Tuple[float, float, float]:
+        """Estimate flush draw, straight draw, and improvement probability."""
+        cards = hole_cards + community_cards
+        if len(cards) < 2:
+            return 0.0, 0.0, 0.0
+
+        suit_counts = Counter(c.suit for c in cards)
+        max_suit_count = max(suit_counts.values()) if suit_counts else 0
+        flush_draw = 1.0 if max_suit_count >= 4 else (0.5 if max_suit_count == 3 else 0.0)
+
+        values = [c.value for c in cards]
+        unique_vals = sorted(set(values))
+        with_ace_low = sorted(set(unique_vals + ([1] if 14 in unique_vals else [])))
+
+        straight_strength = 0.0
+        open_ended = False
+        gutshot = False
+        for start in range(1, 11):
+            window = set(range(start, start + 5))
+            present = len(window.intersection(with_ace_low))
+            if present == 5:
+                straight_strength = 1.0
+                open_ended = True
+                gutshot = False
+                break
+            if present == 4:
+                missing = list(window.difference(with_ace_low))
+                if missing and (missing[0] in {start, start + 4}) and start not in {1, 10}:
+                    open_ended = True
+                    straight_strength = max(straight_strength, 1.0)
+                else:
+                    gutshot = True
+                    straight_strength = max(straight_strength, 0.6)
+
+        outs = 0
+        if flush_draw >= 1.0 and max_suit_count < 5:
+            outs += 9
+        if open_ended and straight_strength < 1.0:
+            outs += 8
+        elif gutshot and straight_strength < 1.0:
+            outs += 4
+
+        cards_seen = len(cards)
+        cards_to_come = max(0, 5 - len(community_cards))
+        unseen_cards = max(1, 52 - cards_seen)
+        outs = min(15, outs)
+
+        if outs == 0 or cards_to_come == 0:
+            improvement_probability = 0.0
+        else:
+            miss_prob = 1.0
+            draws = min(cards_to_come, unseen_cards)
+            for i in range(draws):
+                miss_prob *= max(0.0, (unseen_cards - outs - i) / max(1.0, unseen_cards - i))
+            improvement_probability = 1.0 - miss_prob
+
+        return min(flush_draw, 1.0), min(straight_strength, 1.0), min(max(0.0, improvement_probability), 1.0)
+
+    @staticmethod
+    def _board_danger_score(community_cards: List[Card]) -> float:
+        """Estimate how threatening the board texture is for medium-strength holdings."""
+        if len(community_cards) < 3:
+            return 0.0
+
+        values = [c.value for c in community_cards]
+        suits = [c.suit for c in community_cards]
+        value_counts = Counter(values)
+        suit_counts = Counter(suits)
+
+        score = 0.0
+        max_suit = max(suit_counts.values()) if suit_counts else 0
+        if max_suit >= 4:
+            score += 0.45
+        elif max_suit == 3:
+            score += 0.25
+
+        if 3 in value_counts.values():
+            score += 0.35
+        elif 2 in value_counts.values():
+            score += 0.20
+
+        longest_run = DQNAgent._count_longest_run(values)
+        if longest_run >= 4:
+            score += 0.35
+        elif longest_run == 3:
+            score += 0.20
+
+        if len(community_cards) >= 4:
+            unique_values = sorted(set(values))
+            if unique_values and (max(unique_values) - min(unique_values) <= 4):
+                score += 0.10
+
+        return min(score, 1.0)
     
     def featurize_game_state(self, game_state: Dict[str, Any]) -> Dict[str, float]:
         """
@@ -440,7 +594,8 @@ class DQNAgent(BaseAgent):
         
         # === Game Stage ===
         stage_values = {"Pre-Flop": 0.25, "Flop": 0.5, "Turn": 0.75, "River": 1.0}
-        features["stage"] = stage_values.get(game_state.get("state_name", "Pre-Flop"), 0.25)
+        stage_name = self._normalize_stage_name(game_state.get("state_name", "Pre-Flop"))
+        features["stage"] = stage_values.get(stage_name, 0.25)
         
         # === Opponent Count (normalized to max 5 opponents in 6-player game) ===
         features["num_active_opponents"] = min(num_active_opponents, 5) / 5.0
@@ -466,7 +621,7 @@ class DQNAgent(BaseAgent):
             features["relative_stack_size"] = 1.0
         
         # === Community Cards ===
-        community_cards = game_state.get("community_cards", [])
+        community_cards = self._cards_from_state(game_state.get("community_cards", []))
         features["num_community_cards"] = len(community_cards) / 5.0  # Normalize to 0-1
         
         # === Hand Features ===
@@ -484,6 +639,73 @@ class DQNAgent(BaseAgent):
             features["suited"] = 0.0
             features["connected"] = 0.0
             features["hand_strength"] = 0.0
+
+        # === Made-Hand Strength Features ===
+        hole_cards = self.hand[:2] if len(self.hand) >= 2 else []
+        all_cards = hole_cards + community_cards
+        current_eval: Optional[Tuple[int, List[int]]] = None
+        if len(all_cards) >= 5:
+            current_eval = evaluate_best_five(all_cards)
+            rank, kickers = current_eval
+            features["current_hand_rank_norm"] = float(rank) / float(HandRank.STRAIGHT_FLUSH)
+            kicker_sum = float(sum(kickers[:3])) if kickers else 0.0
+            features["kicker_strength"] = min(kicker_sum / 42.0, 1.0)
+        else:
+            features["current_hand_rank_norm"] = 0.0
+            features["kicker_strength"] = 0.0
+
+        if len(community_cards) >= 5 and current_eval is not None:
+            board_eval = evaluate_best_five(community_cards)
+            if current_eval > board_eval:
+                features["board_relative_strength"] = 1.0
+            elif current_eval == board_eval:
+                features["board_relative_strength"] = 0.5
+            else:
+                features["board_relative_strength"] = 0.0
+        else:
+            features["board_relative_strength"] = 0.0
+
+        # === Improvement Potential Features ===
+        flush_draw, straight_draw, improve_prob = self._draw_features(hole_cards, community_cards)
+        features["flush_draw_strength"] = flush_draw
+        features["straight_draw_strength"] = straight_draw
+        features["improvement_probability"] = improve_prob
+
+        # === Opponent Stronger-Hand Risk Features ===
+        features["board_danger_score"] = self._board_danger_score(community_cards)
+        max_opponent_commit = max((p.get("total_bet_in_hand", 0) for p in active_opponents), default=0.0)
+        self_commit = float(getattr(self, "total_bet_in_hand", 0))
+        pot_norm = max(1.0, float(pot))
+        call_pressure = min(float(call_amount) / pot_norm, 1.0)
+        opponent_commit_pressure = min(float(max_opponent_commit) / pot_norm, 1.0)
+        features["opponent_pressure_score"] = min(1.0, 0.5 * call_pressure + 0.5 * opponent_commit_pressure)
+        features["relative_commitment_gap"] = min(
+            1.0,
+            max(0.0, (float(max_opponent_commit) - self_commit) / pot_norm)
+        )
+
+        # === Betting Pattern Features (current street) ===
+        street_actions = game_state.get("street_actions", [])
+        opponent_ids = {p.get("player_id") for p in active_opponents if p.get("player_id") is not None}
+        opponent_street_actions = [
+            a for a in street_actions
+            if a.get("player_id") in opponent_ids
+        ]
+        if opponent_street_actions:
+            opp_total = float(len(opponent_street_actions))
+            aggressive = sum(
+                1 for a in opponent_street_actions
+                if a.get("action") in {"bet", "raise", "all_in"}
+            )
+            folds = sum(1 for a in opponent_street_actions if a.get("action") == "fold")
+            raises = sum(1 for a in opponent_street_actions if a.get("action") == "raise")
+            features["street_opponent_aggression"] = min(aggressive / opp_total, 1.0)
+            features["street_raise_density"] = min(raises / opp_total, 1.0)
+            features["street_fold_rate"] = min(folds / opp_total, 1.0)
+        else:
+            features["street_opponent_aggression"] = 0.0
+            features["street_raise_density"] = 0.0
+            features["street_fold_rate"] = 0.0
         
         return features
     
@@ -622,7 +844,16 @@ class DQNAgent(BaseAgent):
         
         try:
             checkpoint = torch.load(filepath, map_location='cpu')
-            self.model.load_state_dict(checkpoint['model_state_dict'])
+            state_dict = checkpoint['model_state_dict']
+            first_layer_key = 'network.0.weight'
+            if first_layer_key in state_dict:
+                checkpoint_input_size = int(state_dict[first_layer_key].shape[1])
+                if checkpoint_input_size != self.input_size:
+                    print(
+                        f"{self.name}: Model input mismatch (checkpoint={checkpoint_input_size}, "
+                        f"agent={self.input_size}). Use matching --input-size or retrain with this feature set."
+                    )
+            self.model.load_state_dict(state_dict)
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             self.epsilon = checkpoint.get('epsilon', self.epsilon)
             self.training_episodes = checkpoint.get('training_episodes', 0)

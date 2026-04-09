@@ -17,6 +17,7 @@ import argparse
 import sys
 from pathlib import Path
 from datetime import datetime
+from typing import Optional
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -25,7 +26,13 @@ from app.engine import Game, Player
 from app.engine.agents import AgentRegistry, DQNAgent
 
 
-def create_opponent(opponent_type: str, chips: int, player_id: str, opponent_model_path: str = None) -> Player:
+def create_opponent(
+    opponent_type: str,
+    chips: int,
+    player_id: str,
+    opponent_model_path: str = None,
+    input_size: Optional[int] = None
+) -> Player:
     """Create an opponent player/agent."""
     if opponent_type == "random":
         return AgentRegistry.create("random", name="RandomBot", chips=chips, player_id=player_id)
@@ -36,7 +43,8 @@ def create_opponent(opponent_type: str, chips: int, player_id: str, opponent_mod
             chips=chips, 
             player_id=player_id, 
             is_training=False,
-            model_load_path=opponent_model_path
+            model_load_path=opponent_model_path,
+            input_size=input_size
         )
     elif opponent_type == "dqn-train":
         return AgentRegistry.create(
@@ -45,7 +53,8 @@ def create_opponent(opponent_type: str, chips: int, player_id: str, opponent_mod
             chips=chips, 
             player_id=player_id, 
             is_training=True,
-            model_load_path=opponent_model_path
+            model_load_path=opponent_model_path,
+            input_size=input_size
         )
     else:
         # Default to random
@@ -75,6 +84,7 @@ def train(
     model_load_path: str = None,
     model_save_path: str = "./models/trained_agent.pth",
     opponent_model_path: str = None,
+    input_size: Optional[int] = None,
     save_every: int = 100,
     verbose: bool = True
 ):
@@ -91,6 +101,7 @@ def train(
         model_load_path: Path to load existing model for trainee
         model_save_path: Path to save trained model
         opponent_model_path: Path to load existing model for DQN opponents
+        input_size: DQN feature vector input size (defaults to agent feature schema)
         save_every: Save model every N games
         verbose: Print progress updates
     """
@@ -109,13 +120,20 @@ def train(
         player_id="trainee",
         is_training=True,
         model_load_path=model_load_path,
-        model_save_path=model_save_path
+        model_save_path=model_save_path,
+        input_size=input_size
     )
     
     # Create opponents (num_players - 1 opponents)
     opponents = []
     for i in range(num_players - 1):
-        opponent = create_opponent(opponent_type, initial_chips, f"opponent_{i+1}", opponent_model_path)
+        opponent = create_opponent(
+            opponent_type,
+            initial_chips,
+            f"opponent_{i+1}",
+            opponent_model_path,
+            input_size=input_size
+        )
         opponent.name = f"{opponent.name}_{i+1}"
         opponents.append(opponent)
     
@@ -144,6 +162,8 @@ def train(
             print(f"Trainee loaded from: {model_load_path}")
         if opponent_model_path and opponent_type in ["dqn", "dqn-train"]:
             print(f"Opponent loaded from: {opponent_model_path}")
+        if input_size is not None:
+            print(f"DQN input size: {input_size}")
         print("=" * 60)
         print()
     
@@ -318,6 +338,13 @@ def main():
         default=None,
         help="Path to load model for DQN opponents (only used with -o dqn or -o dqn-train)"
     )
+
+    parser.add_argument(
+        "--input-size",
+        type=int,
+        default=None,
+        help="DQN input feature size. Leave unset to use the agent's default feature schema"
+    )
     
     parser.add_argument(
         "--save-every",
@@ -344,6 +371,7 @@ def main():
         model_load_path=args.load_path,
         model_save_path=args.save_path,
         opponent_model_path=args.opponent_model,
+        input_size=args.input_size,
         save_every=args.save_every,
         verbose=not args.quiet
     )
