@@ -19,7 +19,22 @@ interface RoomConfig {
   starting_chips: number;
 }
 
-const API_BASE = "http://localhost:8000/api";
+const API_BASE = import.meta.env.DEV
+  ? "/api"
+  : (import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000/api");
+
+const getNetworkErrorMessage = (err: unknown, action: string): string => {
+  const fallback = `Unable to ${action}. Check that the API is running and reachable at ${API_BASE}.`;
+  if (!(err instanceof Error)) {
+    return fallback;
+  }
+
+  if (err.name === "TypeError" && err.message.toLowerCase().includes("fetch")) {
+    return fallback;
+  }
+
+  return err.message || fallback;
+};
 
 interface HomePageProps {
   onJoinRoom: (roomId: string, playerName: string) => void;
@@ -49,11 +64,13 @@ function HomePage({ onJoinRoom }: HomePageProps) {
     setError(null);
     try {
       const response = await fetch(`${API_BASE}/rooms`);
-      if (!response.ok) throw new Error("Failed to fetch rooms");
+      if (!response.ok) {
+        throw new Error(`Failed to fetch rooms (${response.status})`);
+      }
       const data = await response.json();
       setRooms(data.rooms || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load rooms");
+      setError(getNetworkErrorMessage(err, "load rooms"));
     } finally {
       setLoading(false);
     }
@@ -83,13 +100,18 @@ function HomePage({ onJoinRoom }: HomePageProps) {
         body: JSON.stringify(config),
       });
 
-      if (!response.ok) throw new Error("Failed to create room");
+      if (!response.ok) {
+        const details = await response.text();
+        throw new Error(
+          `Failed to create room (${response.status})${details ? `: ${details}` : ""}`,
+        );
+      }
 
       const room = await response.json();
       // Auto-join the created room
       onJoinRoom(room.id, playerName);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create room");
+      setError(getNetworkErrorMessage(err, "create a room"));
     } finally {
       setLoading(false);
     }

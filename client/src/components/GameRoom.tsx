@@ -77,8 +77,12 @@ interface GameRoomProps {
   onLeave: () => void;
 }
 
-const WS_BASE = "ws://localhost:8000";
-const API_BASE = "http://localhost:8000/api";
+const WS_BASE = import.meta.env.DEV
+  ? window.location.origin.replace(/^http/, "ws")
+  : (import.meta.env.VITE_WS_BASE ?? "ws://127.0.0.1:8000");
+const API_BASE = import.meta.env.DEV
+  ? "/api"
+  : (import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000/api");
 
 function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
   const [connected, setConnected] = useState(false);
@@ -100,6 +104,22 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
   );
   const ws = useRef<WebSocket | null>(null);
   const communityAreaRef = useRef<HTMLDivElement | null>(null);
+
+  const formatNetworkError = (err: unknown, action: string): string => {
+    const fallback = `Unable to ${action}. Verify server reachability at ${API_BASE} and ${WS_BASE}.`;
+    if (!(err instanceof Error)) {
+      return fallback;
+    }
+
+    if (
+      err.name === "TypeError" &&
+      err.message.toLowerCase().includes("fetch")
+    ) {
+      return fallback;
+    }
+
+    return err.message || fallback;
+  };
 
   useEffect(() => {
     connectWebSocket();
@@ -149,7 +169,7 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
     fetch(`${API_BASE}/models`)
       .then((response) => {
         if (!response.ok) {
-          throw new Error("Failed to load DQN models");
+          throw new Error(`Failed to load DQN models (${response.status})`);
         }
         return response.json();
       })
@@ -164,9 +184,14 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
           setDqnModelPath(models[0].path);
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (!isCancelled) {
+          console.error(
+            "Failed to fetch DQN models from",
+            `${API_BASE}/models`,
+          );
           setAvailableModels([]);
+          setError(formatNetworkError(err, "load DQN models"));
         }
       })
       .finally(() => {
@@ -233,12 +258,17 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
 
     ws.current.onerror = (error) => {
       console.error("WebSocket error:", error);
-      setError("Connection error");
+      setError(`Connection error. Could not reach ${wsUrl}.`);
     };
 
-    ws.current.onclose = () => {
-      console.log("WebSocket disconnected");
+    ws.current.onclose = (event) => {
+      console.log("WebSocket disconnected", event);
       setConnected(false);
+      if (!event.wasClean) {
+        setError(
+          `Connection closed unexpectedly (code ${event.code}). Verify backend and CORS configuration.`,
+        );
+      }
     };
   };
 

@@ -5,6 +5,7 @@ This is the entry point for the poker server.
 Run with: uvicorn app.main:app --reload
 """
 
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -76,15 +77,26 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+default_origins = ",".join([
+    "https://pokerface-zeta.vercel.app",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+])
+
+allowed_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("CORS_ORIGINS", default_origins).split(",")
+    if origin.strip()
+]
+
+print(f"🌐 CORS origins: {allowed_origins}")
+
 # Add CORS middleware for React client
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite dev server
-        "http://localhost:3000",  # Alternative dev port
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -113,9 +125,16 @@ async def root():
 # For running directly with python
 if __name__ == "__main__":
     import uvicorn
+
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    reload = os.getenv("RELOAD", "true").lower() in {"1", "true", "yes"}
+
+    print(f"🚀 Starting server on {host}:{port} (reload={reload})")
+
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True
+        host=host,
+        port=port,
+        reload=reload,
     )
