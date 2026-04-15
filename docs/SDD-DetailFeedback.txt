@@ -1,0 +1,89 @@
+
+Documentation Feedback ~ Deliverable #4
+Software Design Document ~ Detailed Design
+CMSI 4072 Spring 2026
+==========================================
+
+DETAILED CLASS DESCRIPTIONS:
+   Strengths
+      Responsibilities are described clearly at a conceptual level,
+         and the separation between game orchestration (GameController),
+         state representation (GameState), and AI logic (AgentModel) is
+         sound. The inclusion of both human and AI players within the
+         Player abstraction demonstrates good polymorphic design.
+   Suggestions
+      At the detailed design level, class descriptions are too brief.
+      To be implementation-ready, each CSU should include a fields
+         list, public methods with signatures, and notes on invariants
+         or side effects, similar in depth across all classes.
+
+DETAILED INTERFACE DESCRIPTIONS:
+   Strengths
+      The document clearly identifies the three critical subsystem
+         interfaces.  These interactions reflect the core runtime control
+         flow of a turn-based poker game with AI participation.
+   Suggestions
+      The design would be strengthened by documenting concrete action
+         request and response structures and by clarifying whether
+         interfaces are REST-based, WebSocket-only, or hybrid.
+
+DETAILED DATA STRUCTURE DESCRIPTIONS:
+   Strengths
+      The section introduces two key data structures central to AI
+         integration.  Both are appropriate abstractions for encoding game
+         state and player decisions in a uniform manner.
+   Suggestions
+      Data structure descriptions are high level and lack concrete
+         structure.  Additional core runtime structures should be
+         documented here to provide a complete data view of the system.
+
+DETAILED DESIGN DIAGRAMS:
+   Strengths
+      The document includes a full set of diagrams: use case, class,
+         sequence, and activity diagrams.  This breadth is appropriate
+         for a detailed design–level SDD and indicates attention to both
+         structure and behavior.
+   Suggestions
+      Diagrams are not explained in accompanying text.  Each diagram
+         should include a brief narrative describing its scope, key
+         elements, and how it supports the written design.
+
+DATABASE DESIGN AND DESCRIPTION:
+   Strengths
+      The document clearly states that no database is implemented and
+         that learning occurs solely through gameplay experience.
+   Suggestions
+      The absence of persistence conflicts with earlier references to
+         a persistence layer that stores player statistics and AI
+         models. This inconsistency should be resolved.
+
+
+----------------------------------------------
+OVERALL ASSESSMENT:
+   Category                          Points
+   Class Descriptions:                  3 of  3
+   Interface Descriptions:              3 of  3
+   Data structure Descriptions:         1 of  1
+   Design diagrams:                     3 of  3
+   Database design/descriptions:        2 of  2    [this is a gimme]
+                                     ===========
+   Subtotal                            10 of 10
+   ------------------------------------------------------
+   Total Percentage:  10/10 = 100% which is an A-plus
+
+
+OVERALL EVALUATION
+==================
+As a **detailed design–level SDD**, this document is
+**partially complete**. It presents a solid architectural
+concept and identifies appropriate components, but most
+sections remain at a high-level descriptive stage.
+
+To meet detailed design expectations, the document should
+expand CSU definitions, formalize interfaces, specify data
+structures rigorously, and reconcile persistence design
+decisions. With these improvements, it could become an
+implementation-ready SDD suitable for both waterfall review
+and agile execution.
+
+Very nice work, Milo.
