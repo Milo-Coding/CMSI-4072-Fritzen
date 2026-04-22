@@ -364,29 +364,48 @@ class RoomManager:
         Returns:
             The room if successful, None if failed
         """
+        room, _ = self.try_join_room(room_id, player)
+        return room
+
+    def try_join_room(
+        self,
+        room_id: str,
+        player: Player,
+    ) -> tuple[Optional[Room], Optional[str]]:
+        """
+        Add a player to a room and return an explicit failure reason when it fails.
+
+        Returns:
+            (room, None) on success, otherwise (None, reason)
+        """
         room = self.get_room(room_id)
         if not room:
-            return None
-        
+            return None, "room_not_found"
+
         if room.is_full:
-            return None
-        
+            return None, "room_full"
+
         if room.is_active:
             # Could allow joining active games in the future
-            return None
-        
-        # Check if player already in a room
-        if player.player_id in self._player_rooms:
-            # Leave current room first
+            return None, "room_active"
+
+        existing_room_id = self._player_rooms.get(player.player_id)
+        if existing_room_id and existing_room_id != room_id:
             self.leave_room(player.player_id)
-        
-        room.players.append(player)
+
+        player_already_in_room = any(
+            existing_player.player_id == player.player_id
+            for existing_player in room.players
+        )
+        if not player_already_in_room:
+            room.players.append(player)
+
         self._player_rooms[player.player_id] = room_id
 
         if room.host_player_id is None:
             room.host_player_id = player.player_id
-        
-        return room
+
+        return room, None
     
     def leave_room(self, player_id: str) -> Optional[Room]:
         """

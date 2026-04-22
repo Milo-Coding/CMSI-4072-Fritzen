@@ -7,14 +7,43 @@ interface GameSession {
   playerName: string;
 }
 
+type HomePageView = "home" | "create" | "browse";
+
+interface LeaveRoomOptions {
+  destinationView?: HomePageView;
+  errorMessage?: string;
+  playerName?: string;
+}
+
+interface HomePageState {
+  view: HomePageView;
+  error: string | null;
+  playerName: string;
+}
+
 function App() {
   const [gameSession, setGameSession] = useState<GameSession | null>(null);
+  const [homePageState, setHomePageState] = useState<HomePageState>({
+    view: "home",
+    error: null,
+    playerName: "",
+  });
 
   const handleJoinRoom = (roomId: string, playerName: string) => {
+    setHomePageState({
+      view: "home",
+      error: null,
+      playerName,
+    });
     setGameSession({ roomId, playerName });
   };
 
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = (options?: LeaveRoomOptions) => {
+    setHomePageState({
+      view: options?.destinationView ?? "home",
+      error: options?.errorMessage ?? null,
+      playerName: options?.playerName ?? "",
+    });
     setGameSession(null);
   };
 
@@ -27,7 +56,12 @@ function App() {
           onLeave={handleLeaveRoom}
         />
       ) : (
-        <HomePage onJoinRoom={handleJoinRoom} />
+        <HomePage
+          onJoinRoom={handleJoinRoom}
+          initialView={homePageState.view}
+          initialError={homePageState.error}
+          initialPlayerName={homePageState.playerName}
+        />
       )}
     </div>
   );

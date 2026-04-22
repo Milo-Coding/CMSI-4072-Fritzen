@@ -134,22 +134,31 @@ class ConnectionManager:
                 except Exception as e:
                     print(f"Error broadcasting to {session.id}: {e}")
     
-    async def handle_join_game(self, websocket: WebSocket, player_id: str, data: dict):
+    async def handle_join_game(self, websocket: WebSocket, player_id: str, data: dict) -> bool:
         """Handle a player joining a room."""
         room_id = data.get("room_id")
         if not room_id:
             await self.send_error(websocket, "INVALID_REQUEST", "room_id is required")
-            return
+            return False
         
         session = self.player_manager.get_session(player_id)
         if not session or not session.player:
             await self.send_error(websocket, "PLAYER_NOT_FOUND", "Player session not found")
-            return
+            return False
         
-        room = self.room_manager.join_room(room_id, session.player)
+        room, join_error = self.room_manager.try_join_room(room_id, session.player)
         if not room:
-            await self.send_error(websocket, "JOIN_FAILED", "Could not join room")
-            return
+            error_by_reason = {
+                "room_not_found": ("ROOM_NOT_FOUND", "Room not found"),
+                "room_full": ("ROOM_FULL", "Room is full"),
+                "room_active": ("ROOM_ACTIVE", "Game already started in this room"),
+            }
+            code, message = error_by_reason.get(
+                join_error,
+                ("JOIN_FAILED", "Could not join room"),
+            )
+            await self.send_error(websocket, code, message)
+            return False
         
         self.player_manager.set_player_room(player_id, room_id)
         
@@ -165,6 +174,7 @@ class ConnectionManager:
         
         # Send current game state to joining player
         await self.send_game_state(websocket, room_id, player_id)
+        return True
     
     async def handle_leave_game(self, websocket: WebSocket, player_id: str):
         """Handle a player leaving a room."""
@@ -493,7 +503,14 @@ async def game_room_websocket(
     
     try:
         # Auto-join the specified room
-        await manager.handle_join_game(websocket, player_id, {"room_id": room_id})
+        joined_room = await manager.handle_join_game(
+            websocket,
+            player_id,
+            {"room_id": room_id},
+        )
+        if not joined_room:
+            await websocket.close(code=1008, reason="join-failed")
+            return
         
         while True:
             data = await websocket.receive_json()

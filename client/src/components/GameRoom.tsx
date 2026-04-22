@@ -74,7 +74,11 @@ interface Room {
 interface GameRoomProps {
   roomId: string;
   playerName: string;
-  onLeave: () => void;
+  onLeave: (options?: {
+    destinationView?: "home" | "create" | "browse";
+    errorMessage?: string;
+    playerName?: string;
+  }) => void;
 }
 
 const WS_BASE = import.meta.env.DEV
@@ -86,6 +90,7 @@ const API_BASE = import.meta.env.DEV
 
 function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
   const [connected, setConnected] = useState(false);
+  const [joinComplete, setJoinComplete] = useState(false);
   const [room, setRoom] = useState<Room | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +109,13 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
   );
   const ws = useRef<WebSocket | null>(null);
   const communityAreaRef = useRef<HTMLDivElement | null>(null);
+  const joinFailureCodes = new Set([
+    "JOIN_FAILED",
+    "ROOM_NOT_FOUND",
+    "ROOM_FULL",
+    "ROOM_ACTIVE",
+    "GAME_ALREADY_STARTED",
+  ]);
 
   const formatNetworkError = (err: unknown, action: string): string => {
     const fallback = `Unable to ${action}. Verify server reachability at ${API_BASE} and ${WS_BASE}.`;
@@ -206,6 +218,11 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
   }, [room?.is_active, selectedAiType, availableModels.length]);
 
   const connectWebSocket = () => {
+    setJoinComplete(false);
+    setRoom(null);
+    setGameState(null);
+    setError(null);
+
     const wsUrl = `${WS_BASE}/ws/game/${roomId}?player_name=${encodeURIComponent(
       playerName,
     )}`;
@@ -232,6 +249,7 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
         case "game_state":
           setRoom(message.data.room);
           setGameState(message.data.game_state);
+          setJoinComplete(Boolean(message.data.room));
           break;
 
         case "player_joined":
@@ -247,7 +265,28 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
           break;
 
         case "error":
-          setError(message.data.message);
+          {
+            const code = message.data?.code;
+            const messageText =
+              message.data?.message ?? "Unable to join room right now.";
+            const looksLikeJoinFailure =
+              joinFailureCodes.has(code) ||
+              messageText.toLowerCase().includes("could not join room");
+
+            if (!joinComplete && looksLikeJoinFailure) {
+              if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+                ws.current.close(1000, "join-failed");
+              }
+              onLeave({
+                destinationView: "browse",
+                errorMessage: messageText,
+                playerName,
+              });
+              return;
+            }
+
+            setError(messageText);
+          }
           console.error("Error:", message.data);
           break;
 
@@ -409,7 +448,9 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
         }),
       );
     }
-    onLeave();
+    onLeave({
+      playerName,
+    });
   };
 
   // const getSuitSymbol = (suit: string): string => {
@@ -500,6 +541,20 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
       <div className="game-room">
         <div className="loading">
           <h2>Connecting to room...</h2>
+          <button onClick={handleLeave} className="secondary-button">
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!joinComplete) {
+    return (
+      <div className="game-room">
+        {error && <div className="error-message">{error}</div>}
+        <div className="loading">
+          <h2>Joining room...</h2>
           <button onClick={handleLeave} className="secondary-button">
             Cancel
           </button>

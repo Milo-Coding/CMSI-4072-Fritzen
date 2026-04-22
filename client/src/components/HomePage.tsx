@@ -1,14 +1,29 @@
 import { useState, useEffect } from "react";
 import "./HomePage.css";
 
-interface Room {
-  room_id: string;
+type HomePageView = "home" | "create" | "browse";
+
+interface RoomApi {
+  id?: string;
+  room_id?: string;
   name: string;
   player_count: number;
   max_players: number;
   small_blind: number;
   big_blind: number;
-  status: string;
+  status?: string;
+  phase?: string;
+  is_active?: boolean;
+}
+
+interface Room {
+  id: string;
+  name: string;
+  player_count: number;
+  max_players: number;
+  small_blind: number;
+  big_blind: number;
+  status: "waiting" | "playing";
 }
 
 interface RoomConfig {
@@ -38,20 +53,76 @@ const getNetworkErrorMessage = (err: unknown, action: string): string => {
 
 interface HomePageProps {
   onJoinRoom: (roomId: string, playerName: string) => void;
+  initialView?: HomePageView;
+  initialError?: string | null;
+  initialPlayerName?: string;
 }
 
-function HomePage({ onJoinRoom }: HomePageProps) {
-  const [view, setView] = useState<"home" | "create" | "browse">("home");
-  const [playerName, setPlayerName] = useState("");
+const normalizeRoomStatus = (
+  status?: string,
+  phase?: string,
+  isActive?: boolean,
+): "waiting" | "playing" => {
+  const normalized = (status ?? phase ?? "").toLowerCase();
+  if (normalized === "waiting") {
+    return "waiting";
+  }
+  if (normalized) {
+    return "playing";
+  }
+  return isActive ? "playing" : "waiting";
+};
+
+const normalizeRooms = (rawRooms: RoomApi[]): Room[] => {
+  return rawRooms
+    .map((room): Room | null => {
+      const id = room.id ?? room.room_id;
+      if (!id) {
+        return null;
+      }
+
+      return {
+        id,
+        name: room.name,
+        player_count: room.player_count,
+        max_players: room.max_players,
+        small_blind: room.small_blind,
+        big_blind: room.big_blind ?? room.small_blind * 2,
+        status: normalizeRoomStatus(room.status, room.phase, room.is_active),
+      };
+    })
+    .filter((room): room is Room => room !== null);
+};
+
+function HomePage({
+  onJoinRoom,
+  initialView = "home",
+  initialError = null,
+  initialPlayerName = "",
+}: HomePageProps) {
+  const [view, setView] = useState<HomePageView>(initialView);
+  const [playerName, setPlayerName] = useState(initialPlayerName);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
 
   // Form state
   const [roomName, setRoomName] = useState("");
   const [smallBlind, setSmallBlind] = useState(10);
   const [bigBlind, setBigBlind] = useState(20);
   const [startingChips, setStartingChips] = useState(1000);
+
+  useEffect(() => {
+    setView(initialView);
+  }, [initialView]);
+
+  useEffect(() => {
+    setError(initialError);
+  }, [initialError]);
+
+  useEffect(() => {
+    setPlayerName(initialPlayerName);
+  }, [initialPlayerName]);
 
   useEffect(() => {
     if (view === "browse") {
@@ -68,7 +139,7 @@ function HomePage({ onJoinRoom }: HomePageProps) {
         throw new Error(`Failed to fetch rooms (${response.status})`);
       }
       const data = await response.json();
-      setRooms(data.rooms || []);
+      setRooms(normalizeRooms(data.rooms || []));
     } catch (err) {
       setError(getNetworkErrorMessage(err, "load rooms"));
     } finally {
@@ -258,9 +329,9 @@ function HomePage({ onJoinRoom }: HomePageProps) {
         ) : (
           <div className="rooms-grid">
             {rooms.map((room) => (
-              <div key={room.room_id} className="room-card">
+              <div key={room.id} className="room-card">
                 <div className="room-header">
-                  <h3>{room.name || `Room ${room.room_id.slice(0, 6)}`}</h3>
+                  <h3>{room.name || `Room ${room.id.slice(0, 6)}`}</h3>
                   <span className={`status-badge ${room.status}`}>
                     {room.status}
                   </span>
@@ -282,7 +353,7 @@ function HomePage({ onJoinRoom }: HomePageProps) {
                 </div>
 
                 <button
-                  onClick={() => joinRoom(room.room_id)}
+                  onClick={() => joinRoom(room.id)}
                   className="join-button"
                   disabled={room.player_count >= room.max_players}
                 >
