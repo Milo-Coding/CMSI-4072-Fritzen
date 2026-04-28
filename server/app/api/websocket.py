@@ -349,6 +349,9 @@ class ConnectionManager:
             await self.send_error(websocket, "NOT_IN_ROOM", "Not in a room")
             return
 
+        if not await self._require_host(websocket, session.current_room, player_id):
+            return
+
         target_id = data.get("player_id")
         if not target_id:
             await self.send_error(websocket, "INVALID_REQUEST", "player_id is required")

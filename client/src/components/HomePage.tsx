@@ -125,6 +125,18 @@ function HomePage({
   }, [initialPlayerName]);
 
   useEffect(() => {
+    const wakeBackend = async () => {
+      try {
+        await fetch(`${API_BASE}/rooms`, { method: "GET", keepalive: true });
+      } catch (err) {
+        console.warn("Backend wake-up ping failed:", err);
+      }
+    };
+
+    wakeBackend();
+  }, []);
+
+  useEffect(() => {
     if (view === "browse") {
       fetchRooms();
     }

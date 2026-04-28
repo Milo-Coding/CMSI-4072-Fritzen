@@ -109,6 +109,7 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
   );
   const ws = useRef<WebSocket | null>(null);
   const communityAreaRef = useRef<HTMLDivElement | null>(null);
+  const errorTimeoutRef = useRef<number | null>(null);
   const joinFailureCodes = new Set([
     "JOIN_FAILED",
     "ROOM_NOT_FOUND",
@@ -137,11 +138,51 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
     connectWebSocket();
 
     return () => {
+      if (errorTimeoutRef.current) {
+        window.clearTimeout(errorTimeoutRef.current);
+      }
       if (ws.current) {
         ws.current.close();
       }
     };
   }, [roomId, playerName]);
+
+  useEffect(() => {
+    if (!error) {
+      return;
+    }
+
+    if (errorTimeoutRef.current) {
+      window.clearTimeout(errorTimeoutRef.current);
+    }
+
+    errorTimeoutRef.current = window.setTimeout(() => {
+      setError(null);
+    }, 6000);
+
+    return () => {
+      if (errorTimeoutRef.current) {
+        window.clearTimeout(errorTimeoutRef.current);
+      }
+    };
+  }, [error]);
+
+  useEffect(() => {
+    if (!connected || !joinComplete) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      fetch(`${API_BASE}/rooms/${roomId}`, {
+        method: "GET",
+        keepalive: true,
+      }).catch((err) => {
+        console.warn("Keepalive ping failed:", err);
+      });
+    }, 60000);
+
+    return () => window.clearInterval(intervalId);
+  }, [connected, joinComplete, roomId]);
 
   useEffect(() => {
     const communityArea = communityAreaRef.current;
@@ -254,10 +295,12 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
 
         case "player_joined":
           console.log("Player joined:", message.data);
+          refreshRoomState();
           break;
 
         case "player_left":
           console.log("Player left:", message.data);
+          refreshRoomState();
           break;
 
         case "player_action_taken":
@@ -327,6 +370,33 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
 
     console.log("Sending action:", message);
     ws.current.send(JSON.stringify(message));
+  };
+
+  const refreshRoomState = async () => {
+    try {
+      const playerQuery = myPlayerId
+        ? `?player_id=${encodeURIComponent(myPlayerId)}`
+        : "";
+      const stateResponse = await fetch(
+        `${API_BASE}/rooms/${roomId}/state${playerQuery}`,
+      );
+      if (!stateResponse.ok) {
+        throw new Error(
+          `Failed to refresh room state (${stateResponse.status})`,
+        );
+      }
+      const statePayload = await stateResponse.json();
+      if (statePayload.room) {
+        setRoom(statePayload.room);
+      }
+      if (statePayload.game_state) {
+        setGameState(statePayload.game_state);
+      } else {
+        setGameState(null);
+      }
+    } catch (err) {
+      console.warn("Failed to refresh room state:", err);
+    }
   };
 
   const startGame = () => {
@@ -597,7 +667,7 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
                 <div className="seat-type">
                   {player.is_agent ? "AI" : "Human"}
                 </div>
-                {player.player_id !== myPlayerId && (
+                {isHost && player.player_id !== myPlayerId && (
                   <button
                     className="remove-player-btn"
                     onClick={() => removePlayer(player.player_id)}
