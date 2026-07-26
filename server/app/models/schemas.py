@@ -163,7 +163,10 @@ class RoomConfig(BaseModel):
 
 class AddAIRequest(BaseModel):
     """Payload for adding an AI player while in the lobby."""
-    ai_type: str = Field(..., description="Type of AI agent: random, dqn")
+    ai_type: str = Field(
+        ...,
+        description="Type of AI agent: random, dqn, adaptive",
+    )
     dqn_model_path: Optional[str] = Field(
         None,
         description="Path to .pth model file when ai_type is dqn",
@@ -173,8 +176,8 @@ class AddAIRequest(BaseModel):
     @classmethod
     def validate_ai_type(cls, v: str) -> str:
         normalized = v.strip().lower()
-        if normalized not in {"random", "dqn"}:
-            raise ValueError("ai_type must be one of: random, dqn")
+        if normalized not in {"random", "dqn", "adaptive"}:
+            raise ValueError("ai_type must be one of: random, dqn, adaptive")
         return normalized
 
     @field_validator("dqn_model_path")

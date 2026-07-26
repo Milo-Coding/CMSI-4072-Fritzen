@@ -9,10 +9,12 @@ the decide_action method.
 from .base_agent import BaseAgent, AgentRegistry
 from .dqn_agent import DQNAgent
 from .random_agent import RandomAgent
+from .adaptive_agent import AdaptiveAgent
 
 __all__ = [
     'BaseAgent',
     'AgentRegistry',
     'DQNAgent',
     'RandomAgent',
+    'AdaptiveAgent',
 ]

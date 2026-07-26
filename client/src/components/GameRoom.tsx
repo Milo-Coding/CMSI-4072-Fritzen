@@ -96,7 +96,9 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
   const [error, setError] = useState<string | null>(null);
   const [betAmount, setBetAmount] = useState(0);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
-  const [selectedAiType, setSelectedAiType] = useState<"random" | "dqn">(
+  const [selectedAiType, setSelectedAiType] = useState<
+    "random" | "dqn" | "adaptive"
+  >(
     "random",
   );
   const [dqnModelPath, setDqnModelPath] = useState("");
@@ -707,6 +709,7 @@ function GameRoom({ roomId, playerName, onLeave }: GameRoomProps) {
                   >
                     <option value="random">Random</option>
                     <option value="dqn">DQN (Trained)</option>
+                    <option value="adaptive">Adaptive (Causal)</option>
                   </select>
                 </div>
 
