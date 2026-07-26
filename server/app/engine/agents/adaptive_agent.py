@@ -47,6 +47,8 @@ class AdaptiveAgent(BaseAgent):
         self.completed_transitions: List[TrainingTransition] = []
         self.last_action_estimates: List[InterventionEstimate] = []
         self._observed_action_count = 0
+        self._pending_hero_aggression: Optional[Dict[str, Any]] = None
+        self._opponents_responded_to_pending: set[str] = set()
 
     def on_hand_start(self, game_state: Dict[str, Any]) -> None:
         super().on_hand_start(game_state)
@@ -56,6 +58,8 @@ class AdaptiveAgent(BaseAgent):
             starting_stack=self.chips,
         )
         self._observed_action_count = 0
+        self._pending_hero_aggression = None
+        self._opponents_responded_to_pending = set()
 
     def on_hand_end(self, result: Dict[str, Any]) -> None:
         super().on_hand_end(result)
@@ -79,25 +83,42 @@ class AdaptiveAgent(BaseAgent):
         new_actions = history[self._observed_action_count :]
         for action in new_actions:
             player_id = action.get("player_id")
-            if player_id is None or str(player_id) == str(self.player_id):
+            if player_id is None:
                 continue
-            profile = self._profile_for(str(player_id))
+            player_id = str(player_id)
             action_name = str(action.get("action", ""))
             street = str(action.get("street", game_state.get("state_name", "")))
             pot = max(1.0, float(action.get("pot", game_state.get("pot", 0))))
             amount = float(action.get("amount", 0))
-            context = {
+            size_context = {
                 "street": street,
                 "size_bucket": round(amount / pot, 1),
             }
+
+            if player_id == str(self.player_id):
+                if action_name in {"bet", "raise", "all_in"}:
+                    self._pending_hero_aggression = size_context
+                    self._opponents_responded_to_pending = set()
+                continue
+
+            profile = self._profile_for(str(player_id))
             profile.observe(
                 "aggressive_action",
                 action_name in {"bet", "raise", "all_in"},
                 True,
                 {"street": street},
             )
-            if action_name == "fold":
-                profile.observe("fold_to_bet", True, True, context)
+            if (
+                self._pending_hero_aggression is not None
+                and player_id not in self._opponents_responded_to_pending
+            ):
+                profile.observe(
+                    "fold_to_bet",
+                    action_name == "fold",
+                    True,
+                    self._pending_hero_aggression,
+                )
+                self._opponents_responded_to_pending.add(player_id)
         self._observed_action_count = len(history)
 
     def _hero_cards(self, game_state: Mapping[str, Any]) -> List[Any]:
